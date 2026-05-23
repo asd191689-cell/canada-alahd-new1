@@ -1,59 +1,118 @@
 const express = require("express");
 const cors = require("cors");
-const { Pool } = require("pg");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-// إعداد الاتصال بـ PostgreSQL
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
+/* ================================
+   Database Connection
+================================ */
+
+const pool = require("./config/db");
+
+/* ================================
+   Security Middleware
+================================ */
+
+// حماية الهيدر
+app.use(helmet());
+
+// منع السبام والهجمات
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 100,
+  message: "Too many requests, please try again later.",
 });
 
-// Test API
+app.use(limiter);
+
+/* ================================
+   General Middleware
+================================ */
+
+app.use(cors());
+
+app.use(express.json());
+
+/* ================================
+   Health Check API
+================================ */
+
+app.get("/", (req, res) => {
+  res.json({
+    status: "success",
+    message: "Canada Al Ahd Backend Running 🚀",
+  });
+});
+
+/* ================================
+   Test Database API
+================================ */
+
 app.get("/api/test", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
-    res.json({ db_time: result.rows[0].now });
+
+    res.json({
+      success: true,
+      db_time: result.rows[0].now,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
-/* ===== Users API Routes ===== */
-const usersRouter = require("./routes/users");
-app.use("/api/users", usersRouter);
+/* ================================
+   API Routes
+================================ */
 
-/* ===== Families API Routes ===== */
-const familiesRouter = require("./routes/families");
-app.use("/api/families", familiesRouter);
+app.use("/api/auth", require("./routes/auth"));
 
-/* ===== Family Members API Routes ===== */
-const familyMembersRouter = require("./routes/familyMembers");
-app.use("/api/family-members", familyMembersRouter);
+app.use("/api/users", require("./routes/users"));
 
-/* ===== Documents API Routes ===== */
-const documentsRouter = require("./routes/documents");
-app.use("/api/documents", documentsRouter);
+app.use("/api/families", require("./routes/families"));
 
-/* ===== Aid Types API Routes ===== */
-const aidTypesRouter = require("./routes/aidTypes");
-app.use("/api/aid-types", aidTypesRouter);
+app.use("/api/family-members", require("./routes/familyMembers"));
 
-/* ===== Aid Distributions API Routes ===== */
-const aidDistributionsRouter = require("./routes/aidDistributions");
-app.use("/api/aid-distributions", aidDistributionsRouter);
+app.use("/api/documents", require("./routes/documents"));
 
-/* ===== Audit Logs API Routes ===== */
-const auditLogsRouter = require("./routes/auditLogs");
-app.use("/api/audit-logs", auditLogsRouter);
+app.use("/api/aid-types", require("./routes/aidTypes"));
 
-// تشغيل السيرفر
+/* ================================
+   404 Handler
+================================ */
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+/* ================================
+   Global Error Handler
+================================ */
+
+app.use((err, req, res, next) => {
+  console.error("❌ Server Error:", err.stack);
+
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+  });
+});
+
+/* ================================
+   Start Server
+================================ */
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+});

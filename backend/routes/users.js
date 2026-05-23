@@ -1,72 +1,128 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
+const pool = require("../config/db");
+const authMiddleware = require("../middleware/authMiddleware");
 const router = express.Router();
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const { Pool } = require("pg");
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-});
 
-// GET all users (admin only)
-router.get("/", async (req, res) => {
+/*
+=======================================
+GET ALL USERS
+=======================================
+*/
+router.get("/", authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT id, name, username, role, created_at FROM users",
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const result = await pool.query(`
+      SELECT 
+        id,
+        full_name AS name,
+        username,
+        role,
+        created_at
+      FROM users
+      ORDER BY id DESC
+    `);
 
-// POST create new user
-router.post("/", async (req, res) => {
-  try {
-    const { name, username, password, role } = req.body;
-    const hash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      "INSERT INTO users (name, username, password_hash, role) VALUES ($1,$2,$3,$4) RETURNING id,name,username,role",
-      [name, username, hash, role],
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST login
-router.post("/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const result = await pool.query("SELECT * FROM users WHERE username=$1", [
-      username,
-    ]);
-    const user = result.rows[0];
-    if (!user) return res.status(401).json({ error: "Invalid username" });
-
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(401).json({ error: "Invalid password" });
-
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
     res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-      },
+      success: true,
+      users: result.rows,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("GET USERS ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+/*
+=======================================
+CREATE USER
+=======================================
+*/
+router.post("/", authMiddleware, async (req, res) => {
+  try {
+    const { full_name, username, password, role } = req.body;
+
+    if (!full_name || !username || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
+    }
+
+    // Check existing username
+    const existingUser = await pool.query(
+      "SELECT * FROM users WHERE username = $1",
+      [username],
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Username already exists",
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert user
+    const newUser = await pool.query(
+      `
+      INSERT INTO users
+      (full_name, username, password, role)
+      VALUES ($1, $2, $3, $4)
+      RETURNING 
+id,
+full_name AS name,
+username,
+role,
+created_at
+      `,
+      [full_name, username, hashedPassword, role],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      user: newUser.rows[0],
+    });
+  } catch (error) {
+    console.error("CREATE USER ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+/*
+=======================================
+DELETE USER
+=======================================
+*/
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query("DELETE FROM users WHERE id = $1", [id]);
+
+    res.json({
+      success: true,
+      message: "User deleted",
+    });
+  } catch (error) {
+    console.error("DELETE USER ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 });
 

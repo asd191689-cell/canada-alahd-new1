@@ -1,45 +1,64 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { mockUsers } from "../data/mockData";
 import { Shield, Eye, EyeOff, Lock, User } from "lucide-react";
 
 export default function LoginPage() {
   const { setCurrentUser, addAuditLog } = useApp();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
+
   const [error, setError] = useState("");
+
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setLoading(true);
     setError("");
 
-    await new Promise((r) => setTimeout(r, 800));
+    try {
+      const response = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username,
+          password,
+        }),
+      });
 
-    // Mock auth: admin/admin123 or staff1/staff123 or staff2/staff123
-    const validCredentials: Record<string, string> = {
-      admin: "admin123",
-      staff1: "staff123",
-      staff2: "staff123",
-    };
+      const data = await response.json();
 
-    if (validCredentials[username] === password) {
-      const user = mockUsers.find((u) => u.username === username)!;
-      setCurrentUser(user);
+      if (data.success) {
+        localStorage.setItem("token", data.token);
+
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
+
+      // حفظ JWT Token
+      localStorage.setItem("token", data.token);
+
+      // حفظ المستخدم داخل التطبيق
+      setCurrentUser(data.user);
+      // Audit Log
       addAuditLog({
-        userId: user.id,
-        userName: user.name,
+        userId: data.user.id,
+        userName: data.user.username,
         action: "login",
         target: "النظام",
         details: "تسجيل دخول ناجح",
         ipAddress: "127.0.0.1",
       });
-    } else {
-      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    } catch (err: any) {
+      setError(err.message || "حدث خطأ");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -53,7 +72,9 @@ export default function LoginPage() {
       {/* Background decorations */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-32 -right-32 w-96 h-96 bg-green-400 rounded-full opacity-10 blur-3xl"></div>
+
         <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-300 rounded-full opacity-10 blur-3xl"></div>
+
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-500 rounded-full opacity-5 blur-3xl"></div>
 
         {/* Grid pattern */}
@@ -80,15 +101,20 @@ export default function LoginPage() {
               }}
             />
           </div>
+
           <h1 className="text-3xl font-black text-white mb-1">
             مخيم كندا العهد
           </h1>
+
           <p className="text-green-200 text-sm font-medium">
             نظام الإدارة الرقمية المتكاملة
           </p>
+
           <div className="mt-3 flex items-center justify-center gap-2">
             <div className="w-8 h-px bg-green-400 opacity-60"></div>
+
             <Shield className="w-4 h-4 text-green-300" />
+
             <div className="w-8 h-px bg-green-400 opacity-60"></div>
           </div>
         </div>
@@ -113,8 +139,10 @@ export default function LoginPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 اسم المستخدم
               </label>
+
               <div className="relative">
                 <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
                 <input
                   type="text"
                   value={username}
@@ -130,8 +158,10 @@ export default function LoginPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 كلمة المرور
               </label>
+
               <div className="relative">
                 <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
@@ -140,6 +170,7 @@ export default function LoginPage() {
                   placeholder="أدخل كلمة المرور"
                   required
                 />
+
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -173,20 +204,19 @@ export default function LoginPage() {
             </button>
 
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-xs text-green-800">
-              <p className="font-bold mb-1">بيانات الدخول التجريبية:</p>
+              <p className="font-bold mb-1">بيانات الدخول:</p>
+
               <p>
-                • المدير:{" "}
-                <span className="font-mono bg-white px-1 rounded">admin</span> /{" "}
-                <span className="font-mono bg-white px-1 rounded">
-                  admin123
+                • اسم المستخدم:
+                <span className="font-mono bg-white px-1 rounded mx-1">
+                  admin
                 </span>
               </p>
+
               <p>
-                • موظف:{" "}
-                <span className="font-mono bg-white px-1 rounded">staff1</span>{" "}
-                /{" "}
-                <span className="font-mono bg-white px-1 rounded">
-                  staff123
+                • كلمة المرور:
+                <span className="font-mono bg-white px-1 rounded mx-1">
+                  admin123
                 </span>
               </p>
             </div>
@@ -194,7 +224,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-green-300 text-xs mt-6 opacity-70">
-          جميع البيانات محمية ومشفرة • نظام إدارة مخيم كندا العهد © 2024
+          جميع البيانات محمية ومشفرة • نظام إدارة مخيم كندا العهد © 2026
         </p>
       </div>
     </div>
