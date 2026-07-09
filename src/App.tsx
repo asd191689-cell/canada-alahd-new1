@@ -33,16 +33,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { currentUser } = useApp();
-
-  if (currentUser?.role !== "admin") {
-    return <Navigate to="/" replace />;
-  }
-
-  return <>{children}</>;
-}
-
 function AppRoutes() {
   const { currentUser } = useApp();
 
@@ -75,23 +65,9 @@ function AppRoutes() {
                 <Route path="/reports" element={<ReportsPage />} />
 
                 {/* ADMIN ONLY */}
-                <Route
-                  path="/audit"
-                  element={
-                    <AdminRoute>
-                      <AuditPage />
-                    </AdminRoute>
-                  }
-                />
+                <Route path="/audit" element={<AuditPage />} />
 
-                <Route
-                  path="/users"
-                  element={
-                    <AdminRoute>
-                      <UsersPage />
-                    </AdminRoute>
-                  }
-                />
+                <Route path="/users" element={<UsersPage />} />
 
                 {/* FALLBACK */}
                 <Route path="*" element={<Navigate to="/" replace />} />

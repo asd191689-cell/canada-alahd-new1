@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { api } from "../api/apiClient";
+import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import { Link } from "react-router-dom";
 import {
@@ -46,9 +47,22 @@ export default function FamiliesPage() {
   >("all");
   const [selectedFamily, setSelectedFamily] = useState<Family | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(
     null,
   );
+  const loadFamilies = async () => {
+    try {
+      const data = await api.get("/families");
+
+      setFamilies(data.families || []);
+    } catch (error) {
+      console.error("LOAD FAMILIES ERROR:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadFamilies();
+  }, []);
 
   const filtered = families.filter((f) => {
     const matchSearch =
@@ -78,8 +92,22 @@ export default function FamiliesPage() {
   );
 
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const handlePermanentDelete = async (id: number) => {
+    if (!window.confirm("هل تريد حذف العائلة؟")) return;
 
-  const handleSoftDelete = (id: string) => {
+    try {
+      await api.delete(`/families/${id}`);
+
+      await loadFamilies();
+
+      alert("تم حذف الأسرة بنجاح");
+    } catch (error) {
+      console.error(error);
+
+      alert("فشل حذف الأسرة");
+    }
+  };
+  const handleSoftDelete = async (id: number) => {
     setFamilies((prev) => {
       const activeFamilies = prev.filter((f) => !f.isDeleted && f.id !== id);
 
@@ -114,7 +142,7 @@ export default function FamiliesPage() {
 
     setShowDeleteConfirm(null);
   };
-  const handleRestore = (id: string) => {
+  const handleRestore = async (id: number) => {
     setFamilies((prev) =>
       prev.map((f) =>
         f.id === id ? { ...f, isDeleted: false, deletedAt: undefined } : f,
@@ -213,7 +241,7 @@ export default function FamiliesPage() {
             label: "إجمالي الأفراد",
             value: families
               .filter((f) => !f.isDeleted)
-              .reduce((s, f) => s + f.membersCount, 0),
+              .reduce((s, f) => s + Number(f.membersCount || 1), 0),
             color: "text-blue-600",
             bg: "bg-blue-50",
           },
@@ -228,8 +256,9 @@ export default function FamiliesPage() {
                 .reduce(
                   (s, f) =>
                     s +
-                    f.members.filter((m) => m.healthStatus === "disabled")
-                      .length,
+                    (f.members ?? []).filter(
+                      (m) => m.healthStatus === "disabled",
+                    ).length,
                   0,
                 ),
             color: "text-red-600",
@@ -240,7 +269,8 @@ export default function FamiliesPage() {
             value: families
               .filter((f) => !f.isDeleted)
               .reduce(
-                (s, f) => s + f.members.filter((m) => m.age < 12).length,
+                (s, f) =>
+                  s + (f.members || []).filter((m) => m.age < 12).length,
                 0,
               ),
             color: "text-purple-600",
@@ -300,8 +330,15 @@ export default function FamiliesPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedFamilies.map((family, index) => {
-                  const health = healthLabel[family.headHealthStatus];
+                paginatedFamilies.map((family) => {
+                  console.log("Family object:", family);
+                  console.log("headHealthStatus:", family.headHealthStatus);
+                  console.log("healthLabel:", healthLabel);
+                  const health =
+                    healthLabel[
+                      family.headHealthStatus as keyof typeof healthLabel
+                    ] ?? healthLabel.healthy;
+
                   const HealthIcon = health.icon;
                   return (
                     <tr
@@ -310,7 +347,7 @@ export default function FamiliesPage() {
                     >
                       <td className="px-4 py-3">
                         <span className="font-mono font-bold text-green-700 bg-green-50 px-2 py-1 rounded-lg text-xs">
-                          {`CA-${String(startIndex + index + 1).padStart(4, "0")}`}
+                          {family.fileNumber}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -355,7 +392,7 @@ export default function FamiliesPage() {
                         <span className="flex items-center gap-1 text-gray-700">
                           <Users className="w-3.5 h-3.5 text-gray-400" />
                           <span className="font-bold">
-                            {family.membersCount}
+                            {family.membersCount ?? family.members?.length ?? 1}
                           </span>
                         </span>
                       </td>
@@ -557,7 +594,7 @@ export default function FamiliesPage() {
                   },
                   {
                     label: "عدد الأفراد",
-                    value: `${selectedFamily.membersCount} أفراد`,
+                    value: `${selectedFamily.membersCount ?? selectedFamily.members?.length ?? 1} أفراد`,
                     icon: Users,
                   },
                 ].map((item, i) => (
@@ -692,7 +729,13 @@ export default function FamiliesPage() {
                   onClick={() => handleSoftDelete(showDeleteConfirm)}
                   className="px-6 py-2.5 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors"
                 >
-                  تأكيد الحذف
+                  حذف مؤقت
+                </button>
+                <button
+                  onClick={() => handlePermanentDelete(showDeleteConfirm)}
+                  className="px-6 py-2.5 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800"
+                >
+                  حذف نهائي
                 </button>
               </div>
             </div>

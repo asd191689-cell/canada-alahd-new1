@@ -44,7 +44,7 @@ router.post("/register", async (req, res) => {
 VALUES ($1, $2, $3, $4)
 RETURNING id, full_name, username, role
       `,
-      [full_name, username, hashedPassword, role || "staff"],
+      [full_name, username, hashedPassword, role || "employee"],
     );
 
     res.status(201).json({
@@ -53,7 +53,7 @@ RETURNING id, full_name, username, role
 
       user: {
         id: result.rows[0].id,
-        name: result.rows[0].name,
+        name: result.rows[0].full_name,
         username: result.rows[0].username,
         role: result.rows[0].role,
         created_at: result.rows[0].created_at,
@@ -119,7 +119,7 @@ router.post("/login", async (req, res) => {
 
       user: {
         id: user.id,
-        name: user.name,
+        name: user.full_name,
         username: user.username,
         role: user.role,
         created_at: user.created_at,

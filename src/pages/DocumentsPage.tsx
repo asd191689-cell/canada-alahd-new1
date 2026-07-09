@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { FileText, Users, Folder, Shield, UserCog } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import { api } from "../api/apiClient";
 
 type Activity = {
   id: string;
@@ -44,15 +45,10 @@ export default function DocumentsPage() {
     status: "قيد المراجعة" | "مقبولة" | "مرفوضة";
   };
 
-  const [documents, setDocuments] = useState<UploadedDocument[]>(() => {
-    const savedDocuments = localStorage.getItem("documents");
-
-    return savedDocuments ? JSON.parse(savedDocuments) : [];
-  });
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   useEffect(() => {
-    localStorage.setItem("documents", JSON.stringify(documents));
-  }, [documents]);
-
+    loadDocuments();
+  }, []);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
 
   const acceptedDocuments = documents.filter(
@@ -67,30 +63,29 @@ export default function DocumentsPage() {
     (doc) => doc.status === "مرفوضة",
   ).length;
 
-  const handleFileRead = async (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
+  const loadDocuments = async () => {
+    try {
+      const data = await api.get("/documents");
 
-      reader.onload = () => {
-        resolve(reader.result as string);
-      };
-
-      reader.readAsDataURL(file);
-    });
+      setDocuments(data.documents || []);
+    } catch (error) {
+      console.error("LOAD DOCUMENTS ERROR:", error);
+    }
   };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !selectedFamily) return;
 
-    /* منع الرفع بدون اختيار نوع */
-
     if (!documentType) {
       alert("يرجى اختيار نوع الوثيقة أولاً");
-
       return;
     }
 
     const uploadedFiles = Array.from(e.target.files);
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    console.log("selectedFamily =", selectedFamily);
+    console.log("selectedFamily.id =", selectedFamily?.id);
+
+    const maxSize = 5 * 1024 * 1024;
 
     const largeFile = uploadedFiles.find((file) => file.size > maxSize);
 
@@ -98,61 +93,75 @@ export default function DocumentsPage() {
       alert("حجم الملف يجب ألا يتجاوز 5MB");
       return;
     }
-    const duplicateDocument = documents.find(
-      (doc) =>
-        String(doc.headNationalId) === String(selectedFamily?.headNationalId) &&
-        doc.type === documentType &&
-        documentType !== "أخرى",
-    );
+    try {
+      for (const file of uploadedFiles) {
+        const formData = new FormData();
 
-    if (duplicateDocument) {
-      alert("هذه الوثيقة مرفوعة مسبقاً لهذه الأسرة");
+        formData.append("document", file);
+        formData.append("family_id", String(selectedFamily.id));
+        formData.append("head_national_id", selectedFamily.headNationalId);
+        formData.append("type", documentType);
+        formData.append("uploaded_by", String(currentUser?.id ?? ""));
 
-      return;
+        const response = await fetch("http://localhost:5000/api/documents", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+      }
+
+      await loadDocuments();
+
+      alert("تم رفع الوثيقة بنجاح");
+    } catch (error) {
+      console.error(error);
+
+      alert("فشل رفع الوثيقة");
     }
-
-    const newDocuments = await Promise.all(
-      uploadedFiles.map(async (file) => ({
-        id: Date.now().toString() + Math.random(),
-
-        familyId: selectedFamily.id,
-
-        headNationalId: selectedFamily.headNationalId,
-
-        name: file.name,
-
-        type: documentType,
-
-        size: file.size,
-
-        uploadDate: new Date().toISOString(),
-
-        fileUrl: await handleFileRead(file),
-
-        status: "قيد المراجعة" as const,
-      })),
-    );
-    setDocuments((prev) => [...prev, ...newDocuments]);
   };
-  const changeDocumentStatus = (
+  const changeDocumentStatus = async (
     id: string,
     status: "قيد المراجعة" | "مقبولة" | "مرفوضة",
   ) => {
-    setDocuments((prev) =>
-      prev.map((doc) => (doc.id === id ? { ...doc, status } : doc)),
-    );
+    try {
+      await api.put(`/documents/${id}`, {
+        status,
+      });
 
-    setActivities((prev) => [
-      {
-        id: Date.now().toString(),
-        message: `تم تغيير الحالة إلى ${status}`,
-        time: new Date().toLocaleTimeString("ar"),
-      },
-      ...prev,
-    ]);
+      await loadDocuments();
+
+      setActivities((prev) => [
+        {
+          id: Date.now().toString(),
+          message: `تم تغيير الحالة إلى ${status}`,
+          time: new Date().toLocaleTimeString("ar"),
+        },
+        ...prev,
+      ]);
+    } catch (error) {
+      console.error(error);
+
+      alert("فشل تحديث حالة الوثيقة");
+    }
   };
-  const deleteDocument = (id: string) => {
-    setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+  const deleteDocument = async (id: string) => {
+    try {
+      await api.delete(`/documents/${id}`);
+
+      await loadDocuments();
+
+      alert("تم حذف الوثيقة بنجاح");
+    } catch (error) {
+      console.error(error);
+
+      alert("فشل حذف الوثيقة");
+    }
   };
 
   const downloadDocument = (doc: UploadedDocument) => {
@@ -194,9 +203,8 @@ export default function DocumentsPage() {
 
   const totalDocuments = documents.length;
 
-  const linkedFamilies = new Set(
-    documents.map((doc) => String(doc.headNationalId)),
-  );
+  const linkedFamilies = new Set(documents.map((doc) => doc.headNationalId))
+    .size;
   const requiredDocuments = 5;
 
   const completedDocuments = familyDocuments.filter(

@@ -19,17 +19,12 @@ const navItems = [
   { path: "/documents", label: "إدارة الوثائق", icon: FileText },
   { path: "/aid", label: "المساعدات", icon: Gift },
   { path: "/reports", label: "التقارير والتصدير", icon: FileText },
-  { path: "/audit", label: "سجل التدقيق", icon: Shield, adminOnly: true },
-  { path: "/users", label: "إدارة المستخدمين", icon: UserCog, adminOnly: true },
+  { path: "/audit", label: "سجل التدقيق", icon: Shield },
+  { path: "/users", label: "إدارة المستخدمين", icon: UserCog },
 ];
-
 export default function Sidebar() {
   const { currentUser, setCurrentUser, sidebarOpen, setSidebarOpen } = useApp();
   const location = useLocation();
-
-  const filteredItems = navItems.filter(
-    (item) => !item.adminOnly || currentUser?.role === "admin",
-  );
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -81,7 +76,7 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-          {filteredItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               location.pathname === item.path ||
@@ -118,13 +113,13 @@ export default function Sidebar() {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-sm">
-                {currentUser?.name.charAt(0)}
+                {(currentUser?.name || currentUser?.username)?.charAt(0) || "؟"}
               </span>
             </div>
             {sidebarOpen && (
               <div className="overflow-hidden flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold truncate">
-                  {currentUser?.name}
+                  {currentUser?.name || currentUser?.username}{" "}
                 </p>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -133,7 +128,11 @@ export default function Sidebar() {
                       : "bg-blue-500/20 text-blue-300"
                   }`}
                 >
-                  {currentUser?.role === "admin" ? "مدير النظام" : "موظف"}
+                  {currentUser?.role === "admin"
+                    ? "مدير النظام"
+                    : currentUser?.role === "representative"
+                      ? "مندوب المخيم"
+                      : "موظف"}
                 </span>
               </div>
             )}

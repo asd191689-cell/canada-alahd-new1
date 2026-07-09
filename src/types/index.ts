@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "staff";
+export type UserRole = "admin" | "representative" | "employee";
 
 export interface User {
   id: string;
@@ -9,7 +9,7 @@ export interface User {
 }
 
 export interface FamilyMember {
-  id: string;
+  id: number;
 
   gender?: "" | "ذكر" | "أنثى";
 
@@ -30,7 +30,7 @@ export interface FamilyMember {
   notes?: string;
 }
 export interface Family {
-  id: string;
+  id: number;
 
   fileNumber: string;
 
@@ -137,9 +137,9 @@ export interface Family {
 }
 
 export interface Document {
-  id: string;
+  id: number;
 
-  familyId: string;
+  familyId: number;
 
   headNationalId: string;
 
@@ -170,7 +170,7 @@ export type AidCategory =
   | "household";
 
 export interface AidType {
-  id: string;
+  id: number;
 
   name: string;
 
@@ -184,9 +184,10 @@ export interface AidType {
 }
 
 export interface AidDistribution {
-  id: string;
+  id: number;
 
-  familyId: string;
+  familyId: number;
+  headNationalId: string;
 
   familyName: string;
 
@@ -221,7 +222,7 @@ export type AuditAction =
   | "view";
 
 export interface AuditLog {
-  id: string;
+  id: number;
 
   userId: string;
 
@@ -231,7 +232,7 @@ export interface AuditLog {
 
   target: string;
 
-  targetId?: string;
+  targetId?: number;
 
   details: string;
 

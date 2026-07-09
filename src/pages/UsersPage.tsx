@@ -1,17 +1,35 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Plus, Shield, Lock, Eye, EyeOff, Trash2 } from "lucide-react";
+import AccessDenied from "../components/AccessDenied";
+import { hasPermission } from "../utils/permissions";
+import { api } from "../api/apiClient";
 
 interface User {
   id: number;
   name: string;
   username: string;
-  role: "admin" | "staff";
+  role: "admin" | "representative" | "employee";
   created_at: string;
 }
 
 export default function UsersPage() {
   const { currentUser } = useApp();
+  const canAccessUsers =
+    currentUser &&
+    hasPermission(
+      currentUser.role as "admin" | "representative" | "employee",
+      "users",
+    );
+
+  if (!canAccessUsers) {
+    return (
+      <AccessDenied
+        title="غير مخول للوصول"
+        message="هذه الصفحة متاحة فقط لمدير النظام."
+      />
+    );
+  }
 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +41,7 @@ export default function UsersPage() {
     name: "",
     username: "",
     password: "",
-    role: "staff" as "admin" | "staff",
+    role: "employee" as "admin" | "representative" | "employee",
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -36,15 +54,7 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem("token");
-
-      const response = await fetch("http://localhost:5000/api/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
+      const data = await api.get("/users");
 
       if (data.success) {
         setUsers(data.users);
@@ -69,30 +79,12 @@ export default function UsersPage() {
     e.preventDefault();
 
     try {
-      const token = localStorage.getItem("token");
-
-      const response = await fetch("http://localhost:5000/api/auth/register", {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-
-        body: JSON.stringify({
-          full_name: form.name,
-          username: form.username,
-          password: form.password,
-          role: form.role,
-        }),
+      await api.post("/auth/register", {
+        full_name: form.name,
+        username: form.username,
+        password: form.password,
+        role: form.role,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(data.message || "حدث خطأ");
-        return;
-      }
 
       await fetchUsers();
 
@@ -100,7 +92,7 @@ export default function UsersPage() {
         name: "",
         username: "",
         password: "",
-        role: "staff",
+        role: "employee",
       });
 
       setShowAdd(false);
@@ -156,22 +148,6 @@ export default function UsersPage() {
   =======================================
   */
 
-  if (currentUser?.role !== "admin") {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Shield className="w-12 h-12 text-red-300 mx-auto mb-3" />
-
-          <p className="font-bold text-gray-700">
-            غير مصرح لك بالوصول لهذه الصفحة
-          </p>
-
-          <p className="text-sm text-gray-400 mt-1">هذه الصفحة للمدير فقط</p>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="text-center py-20 text-gray-500 font-bold">
@@ -206,23 +182,33 @@ export default function UsersPage() {
 
       {/* Stats */}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="bg-yellow-50 rounded-xl p-4 text-center border border-yellow-100">
           <p className="text-3xl font-black text-yellow-600">
             {users.filter((u) => u.role === "admin").length}
           </p>
 
           <p className="text-sm text-yellow-700 font-semibold mt-1">
-            مدراء النظام
+            مدير النظام
           </p>
         </div>
 
         <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
           <p className="text-3xl font-black text-blue-600">
-            {users.filter((u) => u.role === "staff").length}
+            {users.filter((u) => u.role === "representative").length}
           </p>
 
-          <p className="text-sm text-blue-700 font-semibold mt-1">موظفون</p>
+          <p className="text-sm text-blue-700 font-semibold mt-1">
+            مندوب المخيم
+          </p>
+        </div>
+
+        <div className="bg-green-50 rounded-xl p-4 text-center border border-green-100">
+          <p className="text-3xl font-black text-green-600">
+            {users.filter((u) => u.role === "employee").length}
+          </p>
+
+          <p className="text-sm text-green-700 font-semibold mt-1">موظف</p>
         </div>
       </div>
 
@@ -243,7 +229,9 @@ export default function UsersPage() {
   ${
     user.role === "admin"
       ? "bg-gradient-to-br from-green-500 to-emerald-700"
-      : "bg-gradient-to-br from-blue-500 to-cyan-600"
+      : user.role === "representative"
+        ? "bg-gradient-to-br from-cyan-500 to-sky-700"
+        : "bg-gradient-to-br from-blue-500 to-indigo-700"
   }`}
                 >
                   {(user.name || user.username)
@@ -279,10 +267,16 @@ export default function UsersPage() {
                   className={`text-xs px-2 py-1 rounded-lg font-bold ${
                     user.role === "admin"
                       ? "bg-yellow-100 text-yellow-700"
-                      : "bg-blue-100 text-blue-700"
+                      : user.role === "representative"
+                        ? "bg-cyan-100 text-cyan-700"
+                        : "bg-green-100 text-green-700"
                   }`}
                 >
-                  {user.role === "admin" ? "👑 مدير النظام" : "👤 موظف"}
+                  {user.role === "admin"
+                    ? "👑 مدير النظام"
+                    : user.role === "representative"
+                      ? " 👤مندوب المخيم"
+                      : "👤 موظف"}
                 </span>
               </div>
 
@@ -334,6 +328,62 @@ export default function UsersPage() {
             <Lock className="w-4 h-4 text-green-600" />
             مقارنة الصلاحيات
           </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="p-3 text-right">الصلاحية</th>
+                <th className="p-3 text-center">👑 مدير النظام</th>
+                <th className="p-3 text-center">🚛 مندوب المخيم</th>
+                <th className="p-3 text-center">👤 موظف</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr className="border-t">
+                <td className="p-3 font-semibold">إدارة العائلات</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">👁️</td>
+              </tr>
+
+              <tr className="border-t">
+                <td className="p-3 font-semibold">توزيع المساعدات</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">✅</td>
+              </tr>
+
+              <tr className="border-t">
+                <td className="p-3 font-semibold">إدارة الوثائق</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">👁️</td>
+              </tr>
+
+              <tr className="border-t">
+                <td className="p-3 font-semibold">التقارير</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">👁️</td>
+              </tr>
+
+              <tr className="border-t bg-red-50">
+                <td className="p-3 font-semibold">إدارة المستخدمين</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">❌</td>
+                <td className="text-center">❌</td>
+              </tr>
+
+              <tr className="border-t bg-red-50">
+                <td className="p-3 font-semibold">سجل التدقيق</td>
+                <td className="text-center">✅</td>
+                <td className="text-center">👁️</td>
+                <td className="text-center">❌</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -424,13 +474,16 @@ export default function UsersPage() {
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      role: e.target.value as "admin" | "staff",
+                      role: e.target.value as
+                        | "admin"
+                        | "representative"
+                        | "employee",
                     })
                   }
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-gray-50"
                 >
-                  <option value="staff">موظف</option>
-
+                  <option value="employee">موظف</option>
+                  <option value="representative">مندوب المخيم</option>
                   <option value="admin">مدير النظام</option>
                 </select>
               </div>

@@ -119,10 +119,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("families", JSON.stringify(families));
   }, [families]);
 
-  const [aidTypes, setAidTypes] = useState<AidType[]>(mockAidTypes);
+  const [aidTypes, setAidTypes] = useState<AidType[]>(() => {
+    const savedAidTypes = localStorage.getItem("aidTypes");
+    return savedAidTypes ? JSON.parse(savedAidTypes) : mockAidTypes;
+  });
+  useEffect(() => {
+    localStorage.setItem("aidTypes", JSON.stringify(aidTypes));
+  }, [aidTypes]);
 
-  const [aidDistributions, setAidDistributions] =
-    useState<AidDistribution[]>(mockAidDistributions);
+  const [aidDistributions, setAidDistributions] = useState<AidDistribution[]>(
+    () => {
+      const savedDistributions = localStorage.getItem("aidDistributions");
+
+      return savedDistributions
+        ? JSON.parse(savedDistributions)
+        : mockAidDistributions;
+    },
+  );
+  useEffect(() => {
+    localStorage.setItem("aidDistributions", JSON.stringify(aidDistributions));
+  }, [aidDistributions]);
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
 

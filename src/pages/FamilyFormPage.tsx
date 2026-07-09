@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { Plus, Trash2, Save, ArrowRight, User, Users } from "lucide-react";
 import type { Family, FamilyMember } from "../types";
+import { api } from "../api/apiClient";
 
 const governorates = ["شمال غزة", "غزة", "دير البلح", "خانيونس", "رفح"];
 
@@ -29,11 +30,15 @@ function generateFileNumber(families: Family[]): string {
 }
 
 export default function FamilyFormPage() {
-  const { families, setFamilies, currentUser, addAuditLog } = useApp();
+  const { families, currentUser } = useApp();
   const navigate = useNavigate();
   const { id } = useParams();
-  const isEdit = !!id;
-  const existing = isEdit ? families.find((f) => f.id === id) : undefined;
+
+  const familyId = id ? Number(id) : null;
+
+  const isEdit = familyId !== null;
+
+  const existing = isEdit ? families.find((f) => f.id === familyId) : undefined;
 
   const [form, setForm] = useState({
     fileNumber: generateFileNumber(families),
@@ -328,8 +333,11 @@ export default function FamilyFormPage() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
+   
+
+   e.preventDefault();
+
+if (!validate()) return;
     const newErrors: Record<string, string> = {};
     // التحقق من رقم هوية رب الأسرة
     if (!/^\d{9}$/.test(form.headNationalId)) {
@@ -368,18 +376,21 @@ export default function FamilyFormPage() {
     // منع تكرار رقم هوية رب الأسرة
     const duplicateHead = families.find(
       (f) =>
-        f.headNationalId === form.headNationalId && (!isEdit || f.id !== id),
+        f.headNationalId === form.headNationalId &&
+        (!isEdit || f.id !== familyId),
     );
 
     if (duplicateHead) {
       newErrors.headNationalId = "رقم الهوية مستخدم مسبقاً";
     }
     members.forEach((member, index) => {
-      if (!member.nationalId.trim()) return;
+      if (!(member.nationalId ?? "").trim()) return;
 
       const duplicateMember = families.some((f) =>
         f.members.some(
-          (m) => m.nationalId === member.nationalId && (!isEdit || f.id !== id),
+          (m) =>
+            m.nationalId === member.nationalId &&
+            (!isEdit || f.id !== familyId),
         ),
       );
 
@@ -398,7 +409,7 @@ export default function FamilyFormPage() {
     const memberErrors: Record<string, string> = {};
 
     members.forEach((member, index) => {
-      if (!member.name.trim()) {
+      if (!(member.name ?? "").trim()) {
         memberErrors[`memberName${index}`] = "اسم الفرد مطلوب";
       }
 
@@ -419,103 +430,89 @@ export default function FamilyFormPage() {
     setSaving(true);
     await new Promise((r) => setTimeout(r, 800));
     const now = new Date().toISOString();
-    const processedMembers: FamilyMember[] = members.map((m, i) => ({
+    const processedMembers = members.map((m) => ({
       ...m,
-      id: `m_${Date.now()}_${i}`,
       dateOfBirth: String(m.dateOfBirth || ""),
       age: calcAge(m.dateOfBirth),
     }));
 
-    if (isEdit && existing) {
-      setFamilies((prev) =>
-        prev.map((f) =>
-          f.id === id
-            ? {
-                ...f,
-                ...(form as Partial<Family>),
-                headAge,
-                members: processedMembers,
-                membersCount: totalMembers,
-                updatedAt: now,
-              }
-            : f,
-        ),
-      );
-      addAuditLog({
-        userId: currentUser!.id,
-        userName: currentUser!.name,
-        action: "edit",
-        target: "عائلة",
-        targetId: id,
-        details: `تعديل بيانات عائلة: ${form.headName} - ${existing.fileNumber}`,
-      });
-    } else {
-      const fileNumber = generateFileNumber(families);
-      const newFamily: Family = {
-        id: `f_${Date.now()}`,
+    try {
+      if (isEdit && familyId) {
+        alert("4 - داخل isEdit");
 
-        entryDate: now,
+        await api.put(`/families/${familyId}`, {
+          head_name: form.headName,
+          national_id: form.headNationalId,
 
-        fileNumber,
+          gender: form.gender,
+          marital_status: form.maritalStatus,
 
-        headName: form.headName,
+          is_provider: form.isProvider,
 
-        headNationalId: form.headNationalId,
+          date_of_birth: form.headDateOfBirth,
+          age: headAge,
 
-        headDateOfBirth: String(form.headDateOfBirth),
+          phone: form.headPhone,
 
-        headAge: headAge,
+          health_status: form.headHealthStatus,
 
-        headPhone: form.headPhone,
-        alternatePhone: form.alternatePhone,
+          origin_governorate: form.originGovernorate,
+          origin_city: form.originCity,
 
-        headHealthStatus: form.headHealthStatus as
-          | "healthy"
-          | "sick"
-          | "disabled",
+          current_address: form.currentAddress,
 
-        originGovernorate: form.originGovernorate,
+          housing_type: form.housingType,
 
-        originCity: form.originCity,
+          notes: form.notes,
 
-        currentAddress: form.currentAddress,
+          members: processedMembers,
+        });
+        alert("5 - انتهى api.put");
+      } else {
+        await api.post("/families", {
+          file_number: generateFileNumber(families),
 
-        campLocation: form.campLocation,
+          head_name: form.headName,
+          national_id: form.headNationalId,
 
-        gender: form.gender as "ذكر" | "أنثى",
-        maritalStatus: form.maritalStatus,
+          gender: form.gender,
+          marital_status: form.maritalStatus,
 
-        membersCount: totalMembers,
+          is_provider: form.isProvider,
 
-        members: processedMembers,
+          date_of_birth: form.headDateOfBirth,
+          age: headAge,
 
-        documents: [],
-        isDeleted: false,
+          phone: form.headPhone,
 
-        createdAt: now,
+          health_status: form.headHealthStatus,
 
-        updatedAt: now,
+          origin_governorate: form.originGovernorate,
+          origin_city: form.originCity,
 
-        registeredBy: currentUser?.id || "system",
+          current_address: form.currentAddress,
 
-        notes: form.notes || "",
-      };
-      setFamilies((prev) => [...prev, newFamily]);
+          housing_type: form.housingType,
 
-      addAuditLog({
-        userId: currentUser!.id,
-        userName: currentUser!.name,
-        action: "add",
-        target: "عائلة",
-        targetId: newFamily.id,
-        details: `تسجيل عائلة جديدة: ${form.headName} - ${fileNumber}`,
-      });
+          entry_date: now,
+
+          notes: form.notes,
+
+          registered_by: currentUser?.id,
+
+          members: processedMembers,
+        });
+      }
+
+      navigate("/families");
+    } catch (err) {
+  console.error(err);
+  alert("ERROR: " + String(err));
+}
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    navigate("/families");
   };
-
   console.log("FIELD VALUE:", form.headDateOfBirth);
   return (
     <div className="max-w-4xl mx-auto space-y-5 fade-in">

@@ -1,3 +1,4 @@
+const authorize = require("../middleware/authorize");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const pool = require("../config/db");
@@ -9,7 +10,7 @@ const router = express.Router();
 GET ALL USERS
 =======================================
 */
-router.get("/", authMiddleware, async (req, res) => {
+router.get("/", authMiddleware, authorize(["admin"]), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -42,7 +43,7 @@ router.get("/", authMiddleware, async (req, res) => {
 CREATE USER
 =======================================
 */
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, authorize(["admin"]), async (req, res) => {
   try {
     const { full_name, username, password, role } = req.body;
 
@@ -106,24 +107,29 @@ created_at
 DELETE USER
 =======================================
 */
-router.delete("/:id", authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
+router.delete(
+  "/:id",
+  authMiddleware,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    await pool.query("DELETE FROM users WHERE id = $1", [id]);
+      await pool.query("DELETE FROM users WHERE id = $1", [id]);
 
-    res.json({
-      success: true,
-      message: "User deleted",
-    });
-  } catch (error) {
-    console.error("DELETE USER ERROR:", error);
+      res.json({
+        success: true,
+        message: "User deleted",
+      });
+    } catch (error) {
+      console.error("DELETE USER ERROR:", error);
 
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-});
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  },
+);
 
 module.exports = router;
