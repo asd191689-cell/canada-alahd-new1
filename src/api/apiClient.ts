@@ -2,6 +2,10 @@ const API_URL = "http://localhost:5000/api";
 
 const REQUEST_TIMEOUT = 15000;
 
+type RequestOptions = RequestInit & {
+  responseType?: "json" | "blob";
+};
+
 function getHeaders(body?: BodyInit | null): HeadersInit {
   const token = localStorage.getItem("token");
 
@@ -19,7 +23,7 @@ function getHeaders(body?: BodyInit | null): HeadersInit {
   return headers;
 }
 
-async function request(endpoint: string, options: RequestInit = {}) {
+async function request(endpoint: string, options: RequestOptions = {}) {
   const controller = new AbortController();
 
   const timeout = setTimeout(() => {
@@ -41,7 +45,6 @@ async function request(endpoint: string, options: RequestInit = {}) {
     if (response.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-
       window.location.href = "/login";
 
       throw new Error("انتهت صلاحية الجلسة.");
@@ -51,13 +54,34 @@ async function request(endpoint: string, options: RequestInit = {}) {
       throw new Error("ليس لديك صلاحية لتنفيذ هذا الإجراء.");
     }
 
-    const data = await response.json();
-
     if (!response.ok) {
-      throw new Error(data.message || "حدث خطأ في الخادم.");
+      let message = "حدث خطأ في الخادم.";
+
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        // إذا لم يكن الرد JSON
+      }
+
+      throw new Error(message);
     }
 
-    return data;
+    // ملفات PDF / JPG / PNG وغيرها
+    if (options.responseType === "blob") {
+      return await response.blob();
+    }
+
+    // الاستجابة العادية
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        "الخادم أعاد استجابة غير صالحة بصيغة HTML أو نصية بدل JSON.",
+      );
+    }
+
+    return await response.json();
   } catch (error: any) {
     clearTimeout(timeout);
 
@@ -74,7 +98,11 @@ async function request(endpoint: string, options: RequestInit = {}) {
 }
 
 export const api = {
-  get: (url: string) => request(url),
+  get: (url: string, options?: RequestOptions) =>
+    request(url, {
+      ...options,
+      method: "GET",
+    }),
 
   post: (url: string, body: any) =>
     request(url, {
@@ -86,6 +114,16 @@ export const api = {
     request(url, {
       method: "PUT",
       body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+
+  patch: (url: string, body?: any) =>
+    request(url, {
+      method: "PATCH",
+      ...(body !== undefined
+        ? {
+            body: body instanceof FormData ? body : JSON.stringify(body),
+          }
+        : {}),
     }),
 
   delete: (url: string) =>

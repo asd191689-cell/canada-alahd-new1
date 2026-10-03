@@ -3,7 +3,7 @@ module.exports = function authorize(allowedRoles = []) {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized",
+        message: "غير مصرح بالوصول.",
       });
     }
 

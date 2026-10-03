@@ -1,7 +1,9 @@
 import { api } from "../api/apiClient";
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useApp } from "../context/AppContext";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Plus,
   Search,
@@ -10,6 +12,8 @@ import {
   Trash2,
   RotateCcw,
   Users,
+  UserRound,
+  Baby,
   FileText,
   MapPin,
   Phone,
@@ -39,7 +43,7 @@ const healthLabel = {
 };
 
 export default function FamiliesPage() {
-  const { families, setFamilies, currentUser, addAuditLog } = useApp();
+  const { families, setFamilies, currentUser } = useApp();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "deleted">("active");
   const [healthFilter, setHealthFilter] = useState<
@@ -50,13 +54,56 @@ export default function FamiliesPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(
     null,
   );
+  const [showPermanentDeleteConfirm, setShowPermanentDeleteConfirm] = useState<
+    number | null
+  >(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const loadFamilies = async () => {
     try {
+      setLoading(true);
+      setLoadError(false);
+
       const data = await api.get("/families");
 
       setFamilies(data.families || []);
+      setCurrentPage(1);
     } catch (error) {
       console.error("LOAD FAMILIES ERROR:", error);
+
+      setLoadError(true);
+      toast.error("تعذر تحميل بيانات العائلات");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const previewFamilyDocument = async (doc: Document) => {
+    const previewWindow = window.open("", "_blank");
+
+    if (!previewWindow) {
+      toast.error("يرجى السماح بفتح النوافذ الجديدة في المتصفح.");
+      return;
+    }
+
+    try {
+      const blob = await api.get(`/documents/${doc.id}/download`, {
+        responseType: "blob",
+      });
+
+      const url = window.URL.createObjectURL(blob);
+
+      previewWindow.location.href = url;
+
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 60000);
+    } catch (error) {
+      previewWindow.close();
+
+      console.error("PREVIEW FAMILY DOCUMENT ERROR:", error);
+
+      toast.error("تعذر معاينة الوثيقة.");
     }
   };
 
@@ -66,10 +113,10 @@ export default function FamiliesPage() {
 
   const filtered = families.filter((f) => {
     const matchSearch =
-      f.headName.toLowerCase().includes(search.toLowerCase()) ||
-      f.fileNumber.toLowerCase().includes(search.toLowerCase()) ||
-      f.headNationalId.includes(search) ||
-      f.originGovernorate.includes(search);
+      (f.headName || "").toLowerCase().includes(search.toLowerCase()) ||
+      (f.fileNumber || "").toLowerCase().includes(search.toLowerCase()) ||
+      (f.headNationalId || "").includes(search) ||
+      (f.originGovernorate || "").includes(search);
     const matchFilter =
       filter === "all"
         ? true
@@ -82,7 +129,7 @@ export default function FamiliesPage() {
   });
   const [currentPage, setCurrentPage] = useState(1);
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 5;
 
   const startIndex = (currentPage - 1) * itemsPerPage;
 
@@ -91,159 +138,285 @@ export default function FamiliesPage() {
     startIndex + itemsPerPage,
   );
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const handlePermanentDelete = async (id: number) => {
-    if (!window.confirm("هل تريد حذف العائلة؟")) return;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
 
+  const handleSoftDelete = async (id: number) => {
     try {
       await api.delete(`/families/${id}`);
 
       await loadFamilies();
 
-      alert("تم حذف الأسرة بنجاح");
-    } catch (error) {
-      console.error(error);
+      setShowDeleteConfirm(null);
 
-      alert("فشل حذف الأسرة");
+      toast.success("تم حذف العائلة بنجاح");
+    } catch (error) {
+      console.error("DELETE FAMILY ERROR:", error);
+
+      toast.error("تعذر حذف العائلة");
     }
   };
-  const handleSoftDelete = async (id: number) => {
-    setFamilies((prev) => {
-      const activeFamilies = prev.filter((f) => !f.isDeleted && f.id !== id);
-
-      const deletedFamily = prev.find((f) => f.id === id);
-
-      const updatedFamilies = [
-        ...activeFamilies.map((f, index) => ({
-          ...f,
-          fileNumber: `CA-${String(index + 1).padStart(4, "0")}`,
-        })),
-
-        {
-          ...deletedFamily!,
-          isDeleted: true,
-          deletedAt: new Date().toISOString(),
-        },
-      ];
-
-      return updatedFamilies;
-    });
-
-    const family = families.find((f) => f.id === id);
-
-    addAuditLog({
-      userId: currentUser!.id,
-      userName: currentUser!.name,
-      action: "delete",
-      target: "عائلة",
-      targetId: id,
-      details: `حذف ناعم لعائلة: ${family?.headName} - ${family?.fileNumber}`,
-    });
-
-    setShowDeleteConfirm(null);
-  };
   const handleRestore = async (id: number) => {
-    setFamilies((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, isDeleted: false, deletedAt: undefined } : f,
-      ),
-    );
-    const family = families.find((f) => f.id === id)!;
-    addAuditLog({
-      userId: currentUser!.id,
-      userName: currentUser!.name,
-      action: "restore",
-      target: "عائلة",
-      targetId: id,
-      details: `استعادة عائلة: ${family.headName} - ${family.fileNumber}`,
-    });
+    try {
+      await api.patch(`/families/${id}/restore`);
+
+      await loadFamilies();
+
+      toast.success("تم استعادة العائلة بنجاح");
+    } catch (error) {
+      console.error("RESTORE FAMILY ERROR:", error);
+
+      toast.error("تعذر استعادة العائلة");
+    }
+  };
+  const handlePermanentDelete = async (id: number) => {
+    try {
+      await api.delete(`/families/${id}/permanent`);
+
+      await loadFamilies();
+
+      setShowPermanentDeleteConfirm(null);
+
+      toast.success("تم حذف العائلة نهائيًا");
+    } catch (error) {
+      console.error("PERMANENT DELETE FAMILY ERROR:", error);
+
+      const message =
+        error instanceof Error ? error.message : "تعذر حذف العائلة نهائيًا.";
+
+      toast.error(message);
+
+      setShowPermanentDeleteConfirm(null);
+    }
   };
 
   return (
-    <div className="space-y-5 fade-in">
-      {/* Header */}
+    <div className="space-y-6 fade-in">
+      {/* ================================
+        Page Header
+    ================================= */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-xl font-black text-gray-900">
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">
             إدارة العائلات والأفراد
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            إجمالي: {families.filter((f) => !f.isDeleted).length} عائلة نشطة
+
+          <p className="text-sm text-gray-500 mt-1">
+            إدارة بيانات العائلات والأفراد المسجلين في النظام
           </p>
         </div>
+
         <Link
           to="/families/new"
-          className="flex items-center gap-2 gradient-green text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:opacity-90 transition-all shadow-lg shadow-green-200"
+          className="
+          inline-flex items-center justify-center gap-2
+          gradient-green
+          text-white
+          px-5 py-3
+          rounded-xl
+          font-bold text-sm
+          shadow-md shadow-green-200
+          hover:shadow-lg hover:shadow-green-200
+          hover:-translate-y-0.5
+          active:translate-y-0
+          transition-all duration-200
+        "
         >
           <Plus className="w-4 h-4" />
           تسجيل عائلة جديدة
         </Link>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-48">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      {/* ================================
+  Filters & Search
+================================= */}
+      <div
+        className="
+    bg-white
+    rounded-2xl
+    border border-gray-100
+    shadow-sm
+    overflow-hidden
+  "
+      >
+        <div
+          className="
+      flex flex-col
+      lg:flex-row
+      lg:items-center
+      gap-3
+      p-4
+    "
+        >
+          {/* Search */}
+          <div className="relative flex-1 min-w-0 order-1">
+            <Search
+              className="
+          absolute right-3 top-1/2
+          -translate-y-1/2
+          w-4 h-4
+          text-gray-400
+          pointer-events-none
+        "
+            />
+
             <input
               type="text"
               placeholder="بحث بالاسم، رقم الملف، رقم الهوية، المحافظة..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl py-2.5 pr-10 pl-4 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-gray-50"
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="
+          w-full
+          h-11
+          border border-gray-200
+          rounded-xl
+          bg-gray-50
+          py-2.5
+          pr-10
+          pl-4
+          text-sm
+          text-gray-800
+          placeholder:text-gray-400
+          transition-all duration-200
+          focus:outline-none
+          focus:bg-white
+          focus:border-green-400
+          focus:ring-2
+          focus:ring-green-100
+          hover:border-gray-300
+        "
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
+          {/* Status Tabs */}
+          <div
+            className="
+        flex items-center
+        gap-1
+        border border-gray-100
+        bg-gray-50
+        rounded-xl
+        p-1
+        shrink-0
+        order-2
+      "
+          >
             {(["active", "all", "deleted"] as const).map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  filter === f
-                    ? "bg-white shadow text-green-700"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
+                type="button"
+                onClick={() => {
+                  setFilter(f);
+                  setCurrentPage(1);
+                }}
+                className={`
+            relative
+            min-w-[72px]
+            px-4
+            py-2
+            rounded-lg
+            text-xs
+            font-bold
+            whitespace-nowrap
+            transition-all duration-200
+
+            ${
+              filter === f
+                ? `
+                  bg-white
+                  text-green-700
+                  shadow-sm
+                `
+                : `
+                  text-gray-500
+                  hover:text-gray-700
+                  hover:bg-white/70
+                `
+            }
+          `}
               >
                 {f === "active" ? "النشطة" : f === "all" ? "الكل" : "المحذوفة"}
               </button>
             ))}
           </div>
 
-          <div className="relative">
+          {/* Health Filter */}
+          <div className="relative shrink-0 order-3">
             <select
               value={healthFilter}
-              onChange={(e) =>
-                setHealthFilter(e.target.value as typeof healthFilter)
-              }
-              className="appearance-none border border-gray-200 rounded-xl py-2.5 px-4 pr-4 pl-8 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-gray-50 text-gray-700"
+              onChange={(e) => {
+                setHealthFilter(e.target.value as typeof healthFilter);
+                setCurrentPage(1);
+              }}
+              className="
+          appearance-none
+          w-full
+          lg:w-44
+          h-11
+          border border-gray-200
+          rounded-xl
+          bg-gray-50
+          py-2.5
+          pr-4
+          pl-9
+          text-sm
+          text-gray-700
+          cursor-pointer
+          transition-all duration-200
+          focus:outline-none
+          focus:bg-white
+          focus:border-green-400
+          focus:ring-2
+          focus:ring-green-100
+          hover:border-gray-300
+        "
             >
               <option value="all">جميع الحالات</option>
               <option value="healthy">بصحة جيدة</option>
               <option value="sick">مريض</option>
               <option value="disabled">إعاقة</option>
             </select>
-            <ChevronDown className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+
+            <ChevronDown
+              className="
+          absolute left-3 top-1/2
+          -translate-y-1/2
+          w-4 h-4
+          text-gray-400
+          pointer-events-none
+        "
+            />
           </div>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* ================================
+  Statistics
+================================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             label: "إجمالي العائلات",
             value: families.filter((f) => !f.isDeleted).length,
+            icon: Users,
             color: "text-green-600",
-            bg: "bg-green-50",
+            iconBg: "bg-green-50",
+            border: "border-t-green-600",
           },
           {
             label: "إجمالي الأفراد",
             value: families
               .filter((f) => !f.isDeleted)
-              .reduce((s, f) => s + Number(f.membersCount || 1), 0),
+              .reduce(
+                (total, f) => total + Number(f.totalFamilyMembers || 1),
+                0,
+              ),
+            icon: UserRound,
             color: "text-blue-600",
-            bg: "bg-blue-50",
+            iconBg: "bg-blue-50",
+            border: "border-t-blue-600",
           },
           {
             label: "ذوو الإعاقات",
@@ -254,256 +427,574 @@ export default function FamiliesPage() {
               families
                 .filter((f) => !f.isDeleted)
                 .reduce(
-                  (s, f) =>
-                    s +
+                  (total, f) =>
+                    total +
                     (f.members ?? []).filter(
                       (m) => m.healthStatus === "disabled",
                     ).length,
                   0,
                 ),
+            icon: AlertCircle,
             color: "text-red-600",
-            bg: "bg-red-50",
+            iconBg: "bg-red-50",
+            border: "border-t-red-600",
           },
           {
             label: "الأطفال (أقل 12)",
             value: families
               .filter((f) => !f.isDeleted)
               .reduce(
-                (s, f) =>
-                  s + (f.members || []).filter((m) => m.age < 12).length,
+                (total, f) =>
+                  total + (f.members || []).filter((m) => m.age < 12).length,
                 0,
               ),
+            icon: Baby,
             color: "text-purple-600",
-            bg: "bg-purple-50",
+            iconBg: "bg-purple-50",
+            border: "border-t-purple-600",
           },
-        ].map((s, i) => (
-          <div
-            key={i}
-            className={`${s.bg} rounded-xl p-3 text-center border border-white`}
-          >
-            <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-gray-600 mt-0.5 font-medium">
-              {s.label}
-            </p>
-          </div>
-        ))}
+        ].map((stat) => {
+          const Icon = stat.icon;
+
+          return (
+            <div
+              key={stat.label}
+              className={`
+          bg-white
+          rounded-2xl
+          border border-gray-100
+          border-t-[3px]
+          ${stat.border}
+          px-4 py-4
+          min-h-[96px]
+          shadow-sm
+          flex items-center
+          gap-4
+          transition-all duration-200
+          hover:-translate-y-0.5
+          hover:shadow-md
+        `}
+            >
+              {/* Icon */}
+              <div
+                className={`
+            w-11 h-11
+            shrink-0
+            rounded-xl
+            ${stat.iconBg}
+            flex items-center justify-center
+          `}
+              >
+                <Icon className={`w-5 h-5 ${stat.color}`} />
+              </div>
+
+              {/* Content */}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 font-medium leading-5">
+                  {stat.label}
+                </p>
+
+                <p
+                  className={`
+              mt-1
+              text-2xl
+              leading-none
+              font-black
+              ${stat.color}
+            `}
+                >
+                  {stat.value}
+                </p>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  رقم الملف
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  رب الأسرة
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  عدد الأفراد
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  المحافظة
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  الحالة الصحية
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  تاريخ الدخول
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  الحالة
-                </th>
-                <th className="text-right px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
-                  الإجراءات
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">
-                    <Search className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    <p className="font-medium">لا توجد نتائج</p>
-                  </td>
-                </tr>
-              ) : (
-                paginatedFamilies.map((family) => {
-                  console.log("Family object:", family);
-                  console.log("headHealthStatus:", family.headHealthStatus);
-                  console.log("healthLabel:", healthLabel);
-                  const health =
-                    healthLabel[
-                      family.headHealthStatus as keyof typeof healthLabel
-                    ] ?? healthLabel.healthy;
+      {/* Table / Loading / Error */}
+      {loading ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 space-y-3 animate-pulse">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-4 p-4 border-b border-gray-100"
+              >
+                <div className="w-20 h-8 bg-gray-200 rounded-lg" />
 
-                  const HealthIcon = health.icon;
-                  return (
-                    <tr
-                      key={family.id}
-                      className={`table-row-hover ${family.isDeleted ? "opacity-50" : ""}`}
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-mono font-bold text-green-700 bg-green-50 px-2 py-1 rounded-lg text-xs">
-                          {family.fileNumber}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-10 h-10 bg-gray-200 rounded-full" />
+
+                  <div className="space-y-2">
+                    <div className="h-3 w-32 bg-gray-200 rounded" />
+                    <div className="h-2.5 w-24 bg-gray-200 rounded" />
+                  </div>
+                </div>
+
+                <div className="hidden md:block w-16 h-8 bg-gray-200 rounded-lg" />
+                <div className="hidden md:block w-20 h-8 bg-gray-200 rounded-lg" />
+                <div className="hidden md:block w-20 h-8 bg-gray-200 rounded-lg" />
+                <div className="w-20 h-8 bg-gray-200 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : loadError ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4">
+              <AlertCircle className="w-7 h-7 text-red-500" />
+            </div>
+
+            <h3 className="font-bold text-gray-800 mb-1">
+              تعذر تحميل بيانات العائلات
+            </h3>
+
+            <p className="text-sm text-gray-500 mb-5">
+              حدث خطأ أثناء الاتصال بالخادم، يرجى المحاولة مرة أخرى.
+            </p>
+
+            <button
+              type="button"
+              onClick={loadFamilies}
+              className="
+          inline-flex items-center gap-2
+          px-5 py-2.5
+          rounded-xl
+          bg-green-600
+          text-white
+          font-bold text-sm
+          hover:bg-green-700
+          active:scale-95
+          transition-all
+        "
+            >
+              <RotateCcw className="w-4 h-4" />
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="
+      bg-white
+      rounded-2xl
+      border border-gray-100
+      shadow-sm
+      overflow-hidden
+    "
+        >
+          {/* Table */}
+          <div className="overflow-x-auto">
+            {filtered.length === 0 ? (
+              <div className="w-full py-16 text-center">
+                <div className="flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+                    <Search className="w-7 h-7 text-gray-300" />
+                  </div>
+
+                  <p className="font-bold text-gray-600">لا توجد نتائج</p>
+
+                  <p className="text-xs text-gray-400 mt-1">
+                    جرّب تغيير البحث أو الفلاتر
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50/70 border-b border-gray-100">
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      رقم الملف
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      رب الأسرة
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      عدد الأفراد
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      المحافظة
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      الحالة الصحية
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      تاريخ الدخول
+                    </th>
+
+                    <th className="px-4 py-3.5 text-right font-bold text-gray-700 text-xs whitespace-nowrap">
+                      الحالة
+                    </th>
+
+                    <th className="px-5 py-4 text-center font-bold text-gray-700 whitespace-nowrap">
+                      الإجراءات
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-50">
+                  {paginatedFamilies.map((family) => {
+                    const health =
+                      healthLabel[
+                        family.headHealthStatus as keyof typeof healthLabel
+                      ] ?? healthLabel.healthy;
+
+                    const HealthIcon = health.icon;
+
+                    return (
+                      <tr
+                        key={family.id}
+                        className={`
+  group
+  transition-colors duration-200
+  hover:bg-gray-50/60
+  ${family.isDeleted ? "bg-red-50/20 opacity-70" : ""}
+`}
+                      >
+                        {/* File Number */}
+                        <td className="px-4 py-4">
+                          <span
                             className="
-    w-12 h-12
-    rounded-full
-    overflow-hidden
-    flex items-center justify-center
-    bg-gradient-to-br from-green-500 to-emerald-700
-    shadow-md
-    border-2 border-white
-    ring-2 ring-green-100
-    transition-all duration-300
-    hover:scale-105
-  "
+      inline-flex items-center justify-center
+      min-w-[68px]
+      h-8
+      px-2.5
+      rounded-lg
+      bg-green-50
+      text-green-700
+      font-mono
+      font-bold
+      text-xs
+      border border-green-100
+      whitespace-nowrap
+      direction-ltr
+    "
                           >
-                            {family.photoUrl ? (
-                              <img
-                                src={family.photoUrl}
-                                alt={family.headName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <span className="text-white font-bold text-xs">
-                                {family.headName.charAt(0)}
-                              </span>
+                            {family.fileNumber || "—"}
+                          </span>
+                        </td>
+
+                        {/* Family Head */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-3 min-w-[190px]">
+                            <div
+                              className="
+                          w-11 h-11
+                          rounded-full
+                          overflow-hidden
+                          flex-shrink-0
+                          flex items-center justify-center
+                          bg-gradient-to-br
+                          from-green-500
+                          to-emerald-700
+                          shadow-sm
+                          border-2 border-white
+                          ring-1 ring-green-100
+                          transition-transform duration-200
+                          group-hover:scale-105
+                        "
+                            >
+                              {family.photoUrl ? (
+                                <img
+                                  src={family.photoUrl}
+                                  alt={family.headName}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span className="text-white font-black text-sm">
+                                  {family.headName.charAt(0)}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="min-w-0">
+                              <p className="font-bold text-gray-800 truncate max-w-[180px]">
+                                {family.headName}
+                              </p>
+
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {family.headNationalId}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Members */}
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center gap-1.5 text-gray-700">
+                            <Users className="w-4 h-4 text-gray-400" />
+
+                            <span className="font-bold">
+                              {family.membersCount ??
+                                family.members?.length ??
+                                1}
+                            </span>
+
+                            <span className="text-xs text-gray-400">أفراد</span>
+                          </span>
+                        </td>
+
+                        {/* Governorate */}
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center gap-1.5 text-gray-600 whitespace-nowrap">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            {family.originGovernorate || "—"}
+                          </span>
+                        </td>
+
+                        {/* Health */}
+                        <td className="px-4 py-4">
+                          <span
+                            className={`
+                        inline-flex items-center gap-1.5
+                        px-2.5 py-1.5
+                        rounded-lg
+                        text-xs
+                        font-bold
+                        ${health.color}
+                      `}
+                          >
+                            <HealthIcon className="w-3.5 h-3.5" />
+                            {health.label}
+                          </span>
+                        </td>
+
+                        {/* Entry Date */}
+                        <td className="px-5 py-4 text-gray-600 text-xs whitespace-nowrap">
+                          {family.entryDate
+                            ? new Date(family.entryDate).toLocaleDateString(
+                                "ar-IQ",
+                              )
+                            : "—"}
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-4">
+                          {family.isDeleted ? (
+                            <span
+                              className="
+                          inline-flex
+                          px-2.5 py-1.5
+                          rounded-lg
+                          bg-red-50
+                          text-red-600
+                          border border-red-100
+                          text-xs
+                          font-bold
+                        "
+                            >
+                              محذوف
+                            </span>
+                          ) : (
+                            <span
+                              className="
+                          inline-flex
+                          px-2.5 py-1.5
+                          rounded-lg
+                          bg-green-50
+                          text-green-700
+                          border border-green-100
+                          text-xs
+                          font-bold
+                        "
+                            >
+                              نشط
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* View */}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const data = await api.get(
+                                    `/documents?family_id=${family.id}`,
+                                  );
+
+                                  setSelectedFamily({
+                                    ...family,
+                                    documents: data.documents || [],
+                                  });
+
+                                  setShowModal(true);
+                                } catch (error) {
+                                  console.error(
+                                    "LOAD FAMILY DOCUMENTS ERROR:",
+                                    error,
+                                  );
+
+                                  setSelectedFamily({
+                                    ...family,
+                                    documents: [],
+                                  });
+
+                                  setShowModal(true);
+
+                                  toast.error("تعذر تحميل مستندات العائلة");
+                                }
+                              }}
+                              className="
+                          w-11 h-11 sm:w-9 sm:h-9
+                          inline-flex items-center justify-center
+                          rounded-lg
+                          text-blue-600
+                          hover:bg-blue-50
+                          hover:text-blue-700
+                          transition-all
+                        "
+                              title="عرض التفاصيل"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+
+                            {/* Edit + Delete */}
+                            {!family.isDeleted && (
+                              <>
+                                <Link
+                                  to={`/families/edit/${family.id}`}
+                                  className="
+                             w-11 h-11 sm:w-9 sm:h-9
+                              inline-flex items-center justify-center
+                              rounded-lg
+                              text-green-600
+                              hover:bg-green-50
+                              hover:text-green-700
+                              transition-all
+                            "
+                                  title="تعديل"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </Link>
+
+                                {(currentUser?.role === "admin" ||
+                                  currentUser?.role === "representative" ||
+                                  currentUser?.role === "employee") && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setShowDeleteConfirm(family.id)
+                                    }
+                                    className="
+                                w-11 h-11 sm:w-9 sm:h-9
+                                inline-flex items-center justify-center
+                                rounded-lg
+                                text-red-500
+                                hover:bg-red-50
+                                hover:text-red-600
+                                transition-all
+                              "
+                                    title="حذف"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
                             )}
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-800">
-                              {family.headName}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {family.headNationalId}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="flex items-center gap-1 text-gray-700">
-                          <Users className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="font-bold">
-                            {family.membersCount ?? family.members?.length ?? 1}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="flex items-center gap-1 text-gray-600">
-                          <MapPin className="w-3 h-3 text-gray-400" />
-                          {family.originGovernorate}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${health.color}`}
-                        >
-                          <HealthIcon className="w-3 h-3" />
-                          {health.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                        {new Date(family.entryDate).toLocaleDateString("ar-IQ")}
-                      </td>
-                      <td className="px-4 py-3">
-                        {family.isDeleted ? (
-                          <span className="px-2 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-semibold">
-                            محذوف
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold">
-                            نشط
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setSelectedFamily(family);
-                              setShowModal(true);
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="عرض التفاصيل"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {!family.isDeleted && (
-                            <>
-                              <Link
-                                to={`/families/edit/${family.id}`}
-                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="تعديل"
+
+                            {/* Restore */}
+                            {family.isDeleted && (
+                              <button
+                                type="button"
+                                onClick={() => handleRestore(family.id)}
+                                className="
+      w-9 h-9
+      inline-flex items-center justify-center
+      rounded-lg
+      text-orange-600
+      hover:bg-orange-50
+      hover:text-orange-700
+      transition-all
+    "
+                                title="استعادة"
                               >
-                                <Edit2 className="w-4 h-4" />
-                              </Link>
-                              {currentUser?.role === "admin" && (
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Permanent Delete */}
+                            {family.isDeleted &&
+                              (currentUser?.role === "admin" ||
+                                currentUser?.role === "representative") && (
                                 <button
+                                  type="button"
                                   onClick={() =>
-                                    setShowDeleteConfirm(family.id)
+                                    setShowPermanentDeleteConfirm(family.id)
                                   }
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="حذف"
+                                  className="
+      w-9 h-9
+      inline-flex items-center justify-center
+      rounded-lg
+      text-red-600
+      hover:bg-red-50
+      hover:text-red-700
+      transition-all
+    "
+                                  title="حذف نهائي"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
-                            </>
-                          )}
-                          {family.isDeleted && (
-                            <button
-                              onClick={() => handleRestore(family.id)}
-                              className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                              title="استعادة"
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-center gap-3 py-6 border-t bg-gray-50 rounded-b-2xl">
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-center gap-3 py-5 border-t border-gray-100 bg-gray-50/60">
             <button
+              type="button"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className={`
-      px-5 py-2.5 rounded-xl font-medium transition-all duration-300
-      ${
-        currentPage === 1
-          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-          : "bg-white border border-gray-200 text-gray-700 hover:bg-green-50 hover:text-green-600 hover:border-green-300 shadow-sm"
-      }
-    `}
+  h-10
+  px-4
+  rounded-xl
+  text-sm
+  font-bold
+  transition-all duration-200
+  ${
+    currentPage === 1
+      ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+      : "bg-white border border-gray-200 text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 shadow-sm"
+  }
+`}
             >
               السابق
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {Array.from({ length: totalPages }, (_, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => setCurrentPage(i + 1)}
                   className={`
-          w-10 h-10 rounded-xl font-semibold transition-all duration-300
-          ${
-            currentPage === i + 1
-              ? "bg-green-600 text-white shadow-md scale-105"
-              : "bg-white border border-gray-200 text-gray-600 hover:bg-green-50 hover:text-green-600"
-          }
-        `}
+  w-10 h-10
+  rounded-xl
+  text-sm
+  font-bold
+  transition-all duration-200
+  ${
+    currentPage === i + 1
+      ? "bg-green-600 text-white shadow-sm shadow-green-100"
+      : "bg-white border border-gray-200 text-gray-500 hover:bg-green-50 hover:text-green-700 hover:border-green-200"
+  }
+`}
                 >
                   {i + 1}
                 </button>
@@ -511,237 +1002,598 @@ export default function FamiliesPage() {
             </div>
 
             <button
+              type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className={`
-      px-5 py-2.5 rounded-xl font-medium transition-all duration-300
-      ${
-        currentPage === totalPages
-          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-          : "bg-white border border-gray-200 text-gray-700 hover:bg-green-50 hover:text-green-600 hover:border-green-300 shadow-sm"
-      }
-    `}
+  h-10
+  px-4
+  rounded-xl
+  text-sm
+  font-bold
+  transition-all duration-200
+  ${
+    currentPage === totalPages
+      ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+      : "bg-white border border-gray-200 text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 shadow-sm"
+  }
+`}
             >
               التالي
             </button>
           </div>
-        </div>
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
-          <span>
-            عرض {filtered.length} من {families.length} سجل
-          </span>
-          <span>آخر تحديث: {new Date().toLocaleTimeString("ar-IQ")}</span>
-        </div>
-      </div>
 
-      {/* Family Detail Modal */}
-      {showModal && selectedFamily && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
-        >
+          {/* Footer */}
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto fade-in"
-            onClick={(e) => e.stopPropagation()}
+            className="
+    px-5 py-3
+    border-t border-gray-100
+    bg-gray-50/40
+    flex flex-wrap
+    items-center
+    justify-between
+    gap-2
+    text-xs text-gray-400
+  "
           >
-            <div className="gradient-green p-5 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-white font-black text-lg">
-                    {selectedFamily.headName}
-                  </h3>
-                  <p className="text-green-200 text-sm">
-                    {selectedFamily.fileNumber}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="text-white/70 hover:text-white text-2xl"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <div className="p-5 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  {
-                    label: "رقم الهوية",
-                    value: selectedFamily.headNationalId,
-                    icon: FileText,
-                  },
-                  {
-                    label: "الهاتف",
-                    value: selectedFamily.headPhone,
-                    icon: Phone,
-                  },
-                  {
-                    label: "المحافظة",
-                    value: `${selectedFamily.originGovernorate} - ${selectedFamily.originCity}`,
-                    icon: MapPin,
-                  },
-                  {
-                    label: "العنوان الحالي",
-                    value: selectedFamily.currentAddress,
-                    icon: MapPin,
-                  },
-                  {
-                    label: "تاريخ الدخول",
-                    value: new Date(
-                      selectedFamily.entryDate,
-                    ).toLocaleDateString("ar-IQ"),
-                    icon: FileText,
-                  },
-                  {
-                    label: "عدد الأفراد",
-                    value: `${selectedFamily.membersCount ?? selectedFamily.members?.length ?? 1} أفراد`,
-                    icon: Users,
-                  },
-                ].map((item, i) => (
-                  <div key={i} className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">{item.label}</p>
-                    <p className="font-semibold text-gray-800 text-sm">
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <span>
+              عرض{" "}
+              <span className="font-bold text-gray-600">{filtered.length}</span>{" "}
+              من{" "}
+              <span className="font-bold text-gray-600">{families.length}</span>{" "}
+              سجل
+            </span>
 
-              {selectedFamily.members.length > 0 && (
-                <div>
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-green-600" />
-                    أفراد الأسرة
-                  </h4>
-                  <div className="space-y-2">
-                    {selectedFamily.members.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
-                      >
-                        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Heart className="w-4 h-4 text-blue-600" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-semibold text-sm text-gray-800">
-                            {member.name}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {member.relation === "wife"
-                              ? "زوجة"
-                              : member.relation === "son"
-                                ? "ابن"
-                                : member.relation === "daughter"
-                                  ? "ابنة"
-                                  : "أخرى"}
-                            {" • "}
-                            {member.age} سنة
-                            {member.disability && ` • ${member.disability}`}
-                          </p>
-                        </div>
-                        <span
-                          className={`text-xs px-2 py-1 rounded-lg font-semibold ${
-                            member.healthStatus === "healthy"
-                              ? "bg-green-100 text-green-700"
-                              : member.healthStatus === "sick"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {member.healthStatus === "healthy"
-                            ? "جيدة"
-                            : member.healthStatus === "sick"
-                              ? "مريض"
-                              : "إعاقة"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="mt-4">
-                <h3 className="font-semibold text-sm text-gray-700 mb-2">
-                  المستندات
-                </h3>
-
-                {selectedFamily.documents?.length ? (
-                  <div className="space-y-2">
-                    {selectedFamily.documents.map((doc: Document) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between border rounded-lg px-3 py-2 bg-gray-50"
-                      >
-                        <span className="text-sm">📄 {doc.name}</span>
-
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-green-600 text-sm"
-                        >
-                          عرض
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">لا توجد مستندات</p>
-                )}
-              </div>
-              {selectedFamily.notes && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
-                  <p className="text-xs text-yellow-600 font-semibold mb-1">
-                    ملاحظات:
-                  </p>
-                  <p className="text-sm text-yellow-800">
-                    {selectedFamily.notes}
-                  </p>
-                </div>
-              )}
-            </div>
+            <span>آخر تحديث: {new Date().toLocaleTimeString("ar-IQ")}</span>
           </div>
         </div>
       )}
 
-      {/* Delete Confirm Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 fade-in">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8 text-red-500" />
+      {/* Family Detail Modal */}
+      {showModal &&
+        selectedFamily &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => setShowModal(false)}
+          >
+            <div
+              className="w-full max-w-4xl overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl fade-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="gradient-green relative px-6 py-4.5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
+                        <Users className="h-5 w-5" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="truncate text-xl font-black text-white">
+                          {selectedFamily.headName}
+                        </h3>
+
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-sm text-green-100">
+                            رقم الملف
+                          </span>
+
+                          <span className="rounded-md bg-white/15 px-2 py-0.5 text-xs font-bold text-white">
+                            {selectedFamily.fileNumber || "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-lg font-bold text-white transition-all duration-200 hover:bg-white/20"
+                    aria-label="إغلاق"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-              <h3 className="text-lg font-black text-gray-900 mb-2">
-                تأكيد الحذف
-              </h3>
-              <p className="text-gray-500 text-sm mb-6">
-                سيتم حذف العائلة بشكل ناعم مع الحفاظ على السجل التاريخي. يمكن
-                استعادتها لاحقاً.
-              </p>
-              <div className="flex gap-3 justify-center">
+
+              {/* Modal Body */}
+              <div className="max-h-[72vh] overflow-y-auto bg-white p-5 sm:p-6">
+                <div className="space-y-6">
+                  {/* Family Information */}
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100">
+                        <FileText className="h-4 w-4 text-green-700" />
+                      </div>
+
+                      <div>
+                        <h4 className="font-bold text-gray-900">
+                          بيانات الأسرة
+                        </h4>
+
+                        <p className="text-xs text-gray-400">
+                          المعلومات الأساسية لرب الأسرة
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {[
+                        {
+                          label: "رقم الهوية",
+                          value: selectedFamily.headNationalId || "—",
+                          icon: FileText,
+                        },
+                        {
+                          label: "الهاتف",
+                          value: selectedFamily.headPhone || "—",
+                          icon: Phone,
+                        },
+                        {
+                          label: "المحافظة",
+                          value: selectedFamily.originGovernorate || "—",
+                          icon: MapPin,
+                        },
+                        {
+                          label: "مدينة الأصل",
+                          value: selectedFamily.originCity || "—",
+                          icon: MapPin,
+                        },
+                        {
+                          label: "العنوان الحالي",
+                          value: selectedFamily.currentAddress || "—",
+                          icon: MapPin,
+                        },
+                        {
+                          label: "تاريخ الدخول",
+                          value: selectedFamily.entryDate
+                            ? new Date(
+                                selectedFamily.entryDate,
+                              ).toLocaleDateString("ar-IQ")
+                            : "—",
+                          icon: FileText,
+                        },
+                      ].map((item, i) => {
+                        const Icon = item.icon;
+
+                        return (
+                          <div
+                            key={i}
+                            className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 transition-all duration-200 hover:border-green-100 hover:bg-green-50/30"
+                          >
+                            <div className="mb-1.5 flex items-center gap-2">
+                              <Icon className="h-3.5 w-3.5 text-gray-400" />
+
+                              <p className="text-xs font-medium text-gray-400">
+                                {item.label}
+                              </p>
+                            </div>
+
+                            <p className="break-words text-sm font-bold text-gray-900">
+                              {item.value}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {/* Family Members */}
+                  <section>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+                          <Users className="h-4 w-4 text-blue-600" />
+                        </div>
+
+                        <div>
+                          <h4 className="font-bold text-gray-900">
+                            أفراد الأسرة
+                          </h4>
+
+                          <p className="text-xs text-gray-400">
+                            {selectedFamily.members?.length || 0} أفراد مسجلين
+                          </p>
+                        </div>
+                      </div>
+
+                      <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                        {selectedFamily.members?.length || 0}
+                      </span>
+                    </div>
+
+                    {selectedFamily.members?.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedFamily.members.map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/50 p-3.5 transition-colors duration-200 hover:bg-gray-50"
+                          >
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50">
+                              <Heart className="h-4 w-4 text-blue-600" />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-bold text-gray-800">
+                                {member.name}
+                              </p>
+
+                              <p className="mt-1 text-xs text-gray-400">
+                                {member.relation === "wife"
+                                  ? "زوجة"
+                                  : member.relation === "son"
+                                    ? "ابن"
+                                    : member.relation === "daughter"
+                                      ? "ابنة"
+                                      : "أخرى"}
+                                {" • "}
+                                {member.age ?? "—"} سنة
+                                {" • "}
+                                {member.gender === "ذكر"
+                                  ? "ذكر"
+                                  : member.gender === "أنثى"
+                                    ? "أنثى"
+                                    : "غير محدد"}
+                                {member.disability && ` • ${member.disability}`}
+                              </p>
+                              {member.nationalId && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  رقم الهوية: {member.nationalId}
+                                </p>
+                              )}
+                              {member.dateOfBirth && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  تاريخ الميلاد: {member.dateOfBirth}
+                                </p>
+                              )}
+                            </div>
+
+                            <span
+                              className={`flex-shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ${
+                                member.healthStatus === "healthy"
+                                  ? "bg-green-100 text-green-700"
+                                  : member.healthStatus === "sick"
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {member.healthStatus === "healthy"
+                                ? "جيدة"
+                                : member.healthStatus === "sick"
+                                  ? "مريض"
+                                  : "إعاقة"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+                        <Users className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+
+                        <p className="text-sm font-medium text-gray-500">
+                          لا يوجد أفراد مسجلون
+                        </p>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Documents */}
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
+                        <FileText className="h-4 w-4 text-purple-600" />
+                      </div>
+
+                      <div>
+                        <h4 className="font-bold text-gray-900">المستندات</h4>
+
+                        <p className="text-xs text-gray-400">
+                          المستندات المرتبطة بالعائلة
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedFamily.documents?.length ? (
+                      <div className="space-y-2">
+                        {selectedFamily.documents.map((doc: Document) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50/50 p-3.5 transition-colors duration-200 hover:bg-gray-50"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-purple-100">
+                                <FileText className="h-4 w-4 text-purple-600" />
+                              </div>
+
+                              <span className="truncate text-sm font-semibold text-gray-700">
+                                {doc.name}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => previewFamilyDocument(doc)}
+                              className="flex-shrink-0 rounded-lg bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 transition hover:bg-green-100"
+                            >
+                              عرض
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-5 text-center">
+                        <FileText className="mx-auto mb-2 h-7 w-7 text-gray-300" />
+
+                        <p className="text-sm text-gray-500">لا توجد مستندات</p>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Notes */}
+                  {selectedFamily.notes && (
+                    <section>
+                      <div className="rounded-xl border border-yellow-100 bg-yellow-50/60 p-4">
+                        <div className="mb-1 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-yellow-600" />
+
+                          <p className="text-xs font-bold text-yellow-700">
+                            ملاحظات
+                          </p>
+                        </div>
+
+                        <p className="break-words text-sm leading-6 text-yellow-800">
+                          {selectedFamily.notes}
+                        </p>
+                      </div>
+                    </section>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="border-t border-gray-100 bg-gray-50/50 px-5 py-3 sm:px-6">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-bold text-gray-600 transition-all duration-200 hover:border-gray-300 hover:bg-gray-50"
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      {/* Delete Confirm Modal */}
+      {showDeleteConfirm !== null &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div
+              className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl fade-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="border-b border-gray-100 px-6 pt-6">
+                <div className="text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                    <Trash2 className="h-8 w-8 text-red-500" />
+                  </div>
+
+                  <h3 className="text-lg font-black text-gray-900">
+                    تأكيد حذف العائلة
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-gray-500">
+                    هل أنت متأكد من رغبتك في حذف هذه العائلة؟
+                  </p>
+                </div>
+              </div>
+
+              {/* Family Info */}
+              <div className="px-6 py-4">
+                {(() => {
+                  const familyToDelete = families.find(
+                    (family) => family.id === showDeleteConfirm,
+                  );
+
+                  if (!familyToDelete) return null;
+
+                  return (
+                    <div className="rounded-xl border border-red-100 bg-red-50/60 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-400">
+                            رب الأسرة
+                          </p>
+
+                          <p className="mt-1 truncate text-sm font-bold text-gray-800">
+                            {familyToDelete.headName}
+                          </p>
+                        </div>
+
+                        <div className="flex-shrink-0 text-left">
+                          <p className="text-xs font-medium text-gray-400">
+                            رقم الملف
+                          </p>
+
+                          <span className="mt-1 inline-flex rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-green-700 shadow-sm">
+                            {familyToDelete.fileNumber || "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Warning */}
+              <div className="px-6 pb-5">
+                <div className="rounded-xl border border-yellow-100 bg-yellow-50 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
+
+                    <p className="text-xs leading-5 text-yellow-800">
+                      سيتم إخفاء العائلة من قائمة العائلات النشطة مع الاحتفاظ
+                      ببياناتها وسجلها. يمكنك استعادتها لاحقًا من قسم
+                      <span className="font-bold"> المحذوفة</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 border-t border-gray-100 bg-gray-50 px-6 py-4">
                 <button
+                  type="button"
                   onClick={() => setShowDeleteConfirm(null)}
-                  className="px-6 py-2.5 border border-gray-200 rounded-xl font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                  className="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-100"
                 >
                   إلغاء
                 </button>
+
                 <button
+                  type="button"
                   onClick={() => handleSoftDelete(showDeleteConfirm)}
-                  className="px-6 py-2.5 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors"
+                  className="flex items-center gap-2 rounded-xl bg-red-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-600 active:scale-[0.98]"
                 >
+                  <Trash2 className="h-4 w-4" />
                   حذف مؤقت
-                </button>
-                <button
-                  onClick={() => handlePermanentDelete(showDeleteConfirm)}
-                  className="px-6 py-2.5 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800"
-                >
-                  حذف نهائي
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
+      {/* Permanent Delete Modal */}
+      {showPermanentDeleteConfirm !== null &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+              {/* Header */}
+              <div className="border-b border-gray-100 px-6 py-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-100">
+                    <Trash2 className="h-5 w-5 text-red-600" />
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900">
+                      حذف العائلة نهائيًا
+                    </h3>
+
+                    <p className="mt-1 text-xs text-gray-500">
+                      هذا الإجراء لا يمكن التراجع عنه
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Family Info */}
+              <div className="px-6 py-5">
+                {(() => {
+                  const familyToDelete = families.find(
+                    (family) => family.id === showPermanentDeleteConfirm,
+                  );
+
+                  if (!familyToDelete) return null;
+
+                  return (
+                    <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-400">
+                            رب الأسرة
+                          </p>
+
+                          <p className="mt-1 truncate text-sm font-bold text-gray-800">
+                            {familyToDelete.headName}
+                          </p>
+                        </div>
+
+                        <div className="flex-shrink-0 text-left">
+                          <p className="text-xs font-medium text-gray-400">
+                            رقم الملف السابق
+                          </p>
+
+                          <span className="mt-1 inline-flex rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-gray-600 shadow-sm">
+                            {familyToDelete.fileNumber || "غير موجود"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Warning */}
+              <div className="px-6 pb-5">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm font-bold leading-6 text-red-800">
+                    تحذير: سيتم حذف العائلة نهائيًا من قاعدة البيانات.
+                  </p>
+
+                  <p className="mt-2 text-xs leading-5 text-red-700">
+                    سيتم أيضًا حذف أفراد الأسرة والوثائق المرتبطة بها تلقائيًا.
+                    لا يمكن استعادة هذه البيانات بعد تنفيذ الحذف النهائي.
+                  </p>
+
+                  <p className="mt-2 text-xs font-bold leading-5 text-red-700">
+                    إذا كانت العائلة مرتبطة بسجلات مساعدات موزعة، فلن يسمح
+                    النظام بالحذف النهائي.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 border-t border-gray-100 bg-gray-50 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPermanentDeleteConfirm(null)}
+                  className="
+            rounded-xl
+            border border-gray-200
+            bg-white
+            px-5 py-2.5
+            text-sm font-bold
+            text-gray-600
+            transition
+            hover:bg-gray-100
+          "
+                >
+                  إلغاء
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handlePermanentDelete(showPermanentDeleteConfirm)
+                  }
+                  className="
+            flex items-center gap-2
+            rounded-xl
+            bg-red-600
+            px-5 py-2.5
+            text-sm font-bold
+            text-white
+            shadow-sm
+            transition
+            hover:bg-red-700
+            active:scale-[0.98]
+          "
+                >
+                  <Trash2 className="h-4 w-4" />
+                  نعم، حذف نهائي
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+const auditRoutes = require("./routes/audit");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -21,8 +22,8 @@ app.use(helmet());
 
 // منع السبام والهجمات
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 دقيقة
-  max: 100,
+  windowMs: 15 * 60 * 1000,
+  max: 10000,
   message: "Too many requests, please try again later.",
 });
 
@@ -36,7 +37,6 @@ app.use(cors());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use("/uploads", express.static("uploads"));
 
 /* ================================
    Health Check API
@@ -55,6 +55,7 @@ app.get("/", (req, res) => {
 
 app.get("/api/test", async (req, res) => {
   try {
+    console.log("Using pool:", pool);
     const result = await pool.query("SELECT NOW()");
 
     res.json({
@@ -64,7 +65,7 @@ app.get("/api/test", async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      error: err.message,
+      message: "حدث خطأ داخلي في الخادم.",
     });
   }
 });
@@ -84,6 +85,8 @@ app.use("/api/family-members", require("./routes/familyMembers"));
 app.use("/api/documents", require("./routes/documents"));
 
 app.use("/api/aid-types", require("./routes/aidTypes"));
+app.use("/api/aid-distributions", require("./routes/aidDistributions"));
+app.use("/api/audit", auditRoutes);
 
 /* ================================
    404 Handler
@@ -92,7 +95,7 @@ app.use("/api/aid-types", require("./routes/aidTypes"));
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Route not found",
+    message: "المسار المطلوب غير موجود.",
   });
 });
 
@@ -101,11 +104,17 @@ app.use((req, res) => {
 ================================ */
 
 app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({
+      success: false,
+      message: "بيانات JSON المرسلة غير صالحة.",
+    });
+  }
   console.error("❌ Server Error:", err.stack);
 
   res.status(500).json({
     success: false,
-    message: "Internal Server Error",
+    message: "حدث خطأ داخلي في الخادم.",
   });
 });
 

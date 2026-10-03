@@ -2,6 +2,9 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/db");
+const authMiddleware = require("../middleware/authMiddleware");
+const authorize = require("../middleware/authorize");
+const auditLogger = require("../services/auditLogger");
 
 const router = express.Router();
 
@@ -9,65 +12,102 @@ const router = express.Router();
    Register
 ========================= */
 
-router.post("/register", async (req, res) => {
-  try {
-    const { full_name, username, password, role } = req.body;
+router.post(
+  "/register",
+  authMiddleware,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { full_name, username, password, role } = req.body;
 
-    // التحقق من البيانات
-    if (!full_name || !username || !password || !role) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
-      });
-    }
+      // التحقق من البيانات
+      if (
+        typeof full_name !== "string" ||
+        !full_name.trim() ||
+        typeof username !== "string" ||
+        !username.trim() ||
+        typeof password !== "string" ||
+        !password.trim() ||
+        typeof role !== "string" ||
+        !role.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "جميع الحقول مطلوبة.",
+        });
+      }
+      const normalizedFullName = full_name.trim();
+      const normalizedUsername = username.trim();
+      const normalizedRole = role.trim();
+      const allowedRoles = ["admin", "representative", "employee"];
 
-    // التحقق من وجود المستخدم
-    const userExists = await pool.query(
-      "SELECT * FROM users WHERE username = $1",
-      [username],
-    );
+      if (!allowedRoles.includes(normalizedRole)) {
+        return res.status(400).json({
+          success: false,
+          message: "دور المستخدم غير صالح.",
+        });
+      }
 
-    if (userExists.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Username already exists",
-      });
-    }
+      // التحقق من وجود المستخدم
+      const userExists = await pool.query(
+        "SELECT * FROM users WHERE username = $1",
+        [normalizedUsername],
+      );
 
-    // تشفير الباسورد
-    const hashedPassword = await bcrypt.hash(password, 10);
+      if (userExists.rows.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: "اسم المستخدم موجود مسبقًا.",
+        });
+      }
 
-    // إضافة المستخدم
-    const result = await pool.query(
-      `
+      // تشفير الباسورد
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // إضافة المستخدم
+      const result = await pool.query(
+        `
      INSERT INTO users (full_name, username, password, role)
 VALUES ($1, $2, $3, $4)
 RETURNING id, full_name, username, role
       `,
-      [full_name, username, hashedPassword, role || "employee"],
-    );
+        [
+          normalizedFullName,
+          normalizedUsername,
+          hashedPassword,
+          normalizedRole,
+        ],
+      );
+      await auditLogger(
+        req.user.id,
+        "CREATE_USER",
+        "المستخدمون",
+        result.rows[0].id,
+        `تم إنشاء المستخدم ${result.rows[0].full_name}`,
+      );
 
-    res.status(201).json({
-      success: true,
-      message: "User created successfully",
+      res.status(201).json({
+        success: true,
+        message: "تم إنشاء المستخدم بنجاح.",
 
-      user: {
-        id: result.rows[0].id,
-        name: result.rows[0].full_name,
-        username: result.rows[0].username,
-        role: result.rows[0].role,
-        created_at: result.rows[0].created_at,
-      },
-    });
-  } catch (err) {
-    console.error("REGISTER ERROR:", err);
+        user: {
+          id: result.rows[0].id,
+          name: result.rows[0].full_name,
+          username: result.rows[0].username,
+          role: result.rows[0].role,
+          created_at: result.rows[0].created_at,
+        },
+      });
+    } catch (err) {
+      console.error("REGISTER ERROR:", err);
 
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-});
+      res.status(500).json({
+        success: false,
+        message: "حدث خطأ داخلي في الخادم.",
+      });
+    }
+  },
+);
 
 /* =========================
    Login
@@ -76,10 +116,21 @@ RETURNING id, full_name, username, role
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      typeof password !== "string" ||
+      !password.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "اسم المستخدم وكلمة المرور مطلوبان.",
+      });
+    }
 
     // البحث عن المستخدم
     const result = await pool.query("SELECT * FROM users WHERE username = $1", [
-      username,
+      username.trim(),
     ]);
 
     const user = result.rows[0];
@@ -87,7 +138,7 @@ router.post("/login", async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Invalid credentials",
+        message: "اسم المستخدم أو كلمة المرور غير صحيحة.",
       });
     }
 
@@ -97,7 +148,7 @@ router.post("/login", async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Invalid credentials",
+        message: "اسم المستخدم أو كلمة المرور غير صحيحة.",
       });
     }
 
@@ -113,6 +164,13 @@ router.post("/login", async (req, res) => {
       },
     );
 
+    await auditLogger(
+      user.id,
+      "LOGIN",
+      "النظام",
+      null,
+      `قام ${user.full_name} بتسجيل الدخول إلى النظام`,
+    );
     res.json({
       success: true,
       token,
@@ -130,7 +188,56 @@ router.post("/login", async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "حدث خطأ داخلي في الخادم.",
+    });
+  }
+});
+/*
+=========================
+Logout
+=========================
+*/
+
+router.post("/logout", authMiddleware, async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      `
+      SELECT
+        id,
+        full_name
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id],
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "المستخدم غير موجود.",
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    await auditLogger(
+      user.id,
+      "LOGOUT",
+      "النظام",
+      null,
+      `قام ${user.full_name} بتسجيل الخروج من النظام`,
+    );
+
+    res.json({
+      success: true,
+      message: "تم تسجيل الخروج بنجاح.",
+    });
+  } catch (err) {
+    console.error("LOGOUT ERROR:", err);
+
+    res.status(500).json({
+      success: false,
+      message: "حدث خطأ داخلي في الخادم.",
     });
   }
 });

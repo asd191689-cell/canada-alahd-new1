@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Shield, Eye, EyeOff, Lock, User } from "lucide-react";
+import { api } from "../api/apiClient";
 
 export default function LoginPage() {
-  const { setCurrentUser, addAuditLog } = useApp();
+  const { setCurrentUser } = useApp();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -21,23 +22,16 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
+      const data = await api.post("/auth/login", {
+        username,
+        password,
       });
 
-      const data = await response.json();
+      console.log("LOGIN RESPONSE:", data);
 
-      if (data.success) {
-        localStorage.setItem("token", data.token);
-
-        localStorage.setItem("user", JSON.stringify(data.user));
+      if (!data.success) {
+        setError(data.message);
+        return;
       }
 
       // حفظ JWT Token
@@ -45,15 +39,6 @@ export default function LoginPage() {
 
       // حفظ المستخدم داخل التطبيق
       setCurrentUser(data.user);
-      // Audit Log
-      addAuditLog({
-        userId: data.user.id,
-        userName: data.user.username,
-        action: "login",
-        target: "النظام",
-        details: "تسجيل دخول ناجح",
-        ipAddress: "127.0.0.1",
-      });
     } catch (err: any) {
       setError(err.message || "حدث خطأ");
     } finally {
@@ -209,14 +194,14 @@ export default function LoginPage() {
               <p>
                 • اسم المستخدم:
                 <span className="font-mono bg-white px-1 rounded mx-1">
-                  admin
+                  *******
                 </span>
               </p>
 
               <p>
                 • كلمة المرور:
                 <span className="font-mono bg-white px-1 rounded mx-1">
-                  admin123
+                  *******
                 </span>
               </p>
             </div>

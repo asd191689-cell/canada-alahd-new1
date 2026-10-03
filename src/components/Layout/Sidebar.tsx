@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { api } from "../../api/apiClient";
 import { useApp } from "../../context/AppContext";
 import {
   LayoutDashboard,
@@ -26,10 +27,18 @@ export default function Sidebar() {
   const { currentUser, setCurrentUser, sidebarOpen, setSidebarOpen } = useApp();
   const location = useLocation();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post("/auth/logout", {});
+    } catch (err) {
+      console.error(err);
+    }
+
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
     setCurrentUser(null);
   };
-
   return (
     <>
       {/* Mobile overlay */}
@@ -68,7 +77,8 @@ export default function Sidebar() {
           )}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="mr-auto text-green-300 hover:text-white transition-colors lg:hidden"
+            aria-label="إغلاق القائمة الجانبية"
+            className="mr-auto p-3 text-green-300 hover:text-white transition-colors lg:hidden"
           >
             <X className="w-5 h-5" />
           </button>
@@ -131,7 +141,7 @@ export default function Sidebar() {
                   {currentUser?.role === "admin"
                     ? "مدير النظام"
                     : currentUser?.role === "representative"
-                      ? "مندوب المخيم"
+                      ? "مدير المخيم"
                       : "موظف"}
                 </span>
               </div>
@@ -139,7 +149,7 @@ export default function Sidebar() {
           </div>
           <button
             onClick={handleLogout}
-            className={`mt-3 flex items-center gap-2 w-full px-3 py-2 rounded-xl text-red-300 hover:bg-red-900/30 hover:text-red-200 transition-all text-sm ${sidebarOpen ? "" : "justify-center"}`}
+            className={`mt-3 flex items-center gap-2 w-full px-3 py-3 rounded-xl text-red-300 hover:bg-red-900/30 hover:text-red-200 transition-all text-sm ${sidebarOpen ? "" : "justify-center"}`}
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />
             {sidebarOpen && <span>تسجيل الخروج</span>}

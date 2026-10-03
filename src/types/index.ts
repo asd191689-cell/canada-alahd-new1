@@ -1,7 +1,7 @@
 export type UserRole = "admin" | "representative" | "employee";
 
 export interface User {
-  id: string;
+  id: number;
   name: string;
   username: string;
   role: UserRole;
@@ -116,6 +116,7 @@ export interface Family {
   */
 
   membersCount: number;
+  totalFamilyMembers?: number;
 
   members: FamilyMember[];
 
@@ -138,28 +139,15 @@ export interface Family {
 
 export interface Document {
   id: number;
-
   familyId: number;
-
-  headNationalId: string;
-
-  fileNumber?: string;
-
-  type:
-    | "national_id"
-    | "displacement_card"
-    | "birth_certificate"
-    | "marriage_certificate"
-    | "medical_report"
-    | "other";
-
+  headNationalId: string | null;
+  fileNumber?: string | null;
+  type: string;
   name: string;
-
   url: string;
-
   uploadedAt: string;
-
-  uploadedBy: string;
+  uploadedBy: number;
+  status: "pending" | "approved" | "rejected";
 }
 
 export type AidCategory =
@@ -193,7 +181,7 @@ export interface AidDistribution {
 
   fileNumber: string;
 
-  aidTypeId: string;
+  aidTypeId: number;
 
   aidTypeName: string;
 
@@ -203,7 +191,7 @@ export interface AidDistribution {
 
   distributionDate: string;
 
-  supervisorId: string;
+  supervisorId: number;
 
   supervisorName: string;
 
@@ -213,18 +201,25 @@ export interface AidDistribution {
 }
 
 export type AuditAction =
-  | "add"
-  | "edit"
-  | "delete"
-  | "restore"
-  | "export"
-  | "login"
-  | "view";
-
+  | "LOGIN"
+  | "LOGOUT"
+  | "CREATE_USER"
+  | "UPDATE_USER"
+  | "DELETE_USER"
+  | "CREATE_FAMILY"
+  | "UPDATE_FAMILY"
+  | "DELETE_FAMILY"
+  | "UPLOAD_DOCUMENT"
+  | "DELETE_DOCUMENT"
+  | "CREATE_AID_TYPE"
+  | "UPDATE_AID_TYPE"
+  | "DELETE_AID_TYPE"
+  | "DISTRIBUTE_AID"
+  | "DELETE_DISTRIBUTION";
 export interface AuditLog {
   id: number;
 
-  userId: string;
+  userId: number;
 
   userName: string;
 
@@ -240,7 +235,6 @@ export interface AuditLog {
 
   ipAddress?: string;
 }
-
 export interface DashboardStats {
   totalFamilies: number;
 

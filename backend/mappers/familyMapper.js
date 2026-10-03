@@ -5,10 +5,10 @@ function mapFamily(row) {
     fileNumber: row.file_number,
 
     headName: row.head_name,
-    headNationalId: row.head_national_id,
-    headDateOfBirth: row.head_date_of_birth,
-    headAge: row.head_age,
-    headPhone: row.head_phone,
+    headNationalId: row.national_id,
+    headDateOfBirth: row.date_of_birth,
+    headAge: row.age,
+    headPhone: row.phone,
     alternatePhone: row.alternate_phone,
 
     headHealthStatus: row.health_status,
@@ -22,6 +22,7 @@ function mapFamily(row) {
 
     currentAddress: row.current_address,
     housingType: row.housing_type,
+    campLocation: row.camp_location,
 
     entryDate: row.entry_date,
 

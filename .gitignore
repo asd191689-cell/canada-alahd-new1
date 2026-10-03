@@ -6,3 +6,5 @@ dist/
 build/
 backend/uploads/
 uploads/
+backend/.env.before-neon
+backups/

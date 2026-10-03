@@ -14,12 +14,7 @@ import type {
   AuditLog,
 } from "../types";
 
-import {
-  mockFamilies,
-  mockAidTypes,
-  mockAidDistributions,
-  mockAuditLogs,
-} from "../data/mockData";
+import { api } from "../api/apiClient";
 
 /*
 ========================================
@@ -43,10 +38,9 @@ interface AppContextType {
   aidDistributions: AidDistribution[];
 
   setAidDistributions: React.Dispatch<React.SetStateAction<AidDistribution[]>>;
+  users: User[];
 
   auditLogs: AuditLog[];
-
-  addAuditLog: (log: Omit<AuditLog, "id" | "timestamp">) => void;
 
   sidebarOpen: boolean;
 
@@ -110,58 +104,80 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ========================================
   */
 
-  const [families, setFamilies] = useState<Family[]>(() => {
-    const savedFamilies = localStorage.getItem("families");
+  const [families, setFamilies] = useState<Family[]>([]);
 
-    return savedFamilies ? JSON.parse(savedFamilies) : mockFamilies;
-  });
-  useEffect(() => {
-    localStorage.setItem("families", JSON.stringify(families));
-  }, [families]);
-
-  const [aidTypes, setAidTypes] = useState<AidType[]>(() => {
-    const savedAidTypes = localStorage.getItem("aidTypes");
-    return savedAidTypes ? JSON.parse(savedAidTypes) : mockAidTypes;
-  });
-  useEffect(() => {
-    localStorage.setItem("aidTypes", JSON.stringify(aidTypes));
-  }, [aidTypes]);
+  const [aidTypes, setAidTypes] = useState<AidType[]>([]);
 
   const [aidDistributions, setAidDistributions] = useState<AidDistribution[]>(
-    () => {
-      const savedDistributions = localStorage.getItem("aidDistributions");
-
-      return savedDistributions
-        ? JSON.parse(savedDistributions)
-        : mockAidDistributions;
-    },
+    [],
   );
-  useEffect(() => {
-    localStorage.setItem("aidDistributions", JSON.stringify(aidDistributions));
-  }, [aidDistributions]);
+  const [users, setUsers] = useState<User[]>([]);
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  /*
-  ========================================
-  AUDIT LOG
-  ========================================
-  */
+  useEffect(() => {
+    if (!currentUser) return;
 
-  const addAuditLog = (log: Omit<AuditLog, "id" | "timestamp">) => {
-    const newLog: AuditLog = {
-      ...log,
+    const loadFamilies = async () => {
+      try {
+        const data = await api.get("/families");
 
-      id: `al${Date.now()}`,
+        console.log("FAMILIES API:", data.families);
 
-      timestamp: new Date().toISOString(),
+        const activeFamilies = (data.families || []).filter(
+          (family: Family) => family.isDeleted !== true,
+        );
+
+        console.log("ACTIVE FAMILIES:", activeFamilies);
+        console.log("ACTIVE FAMILIES COUNT:", activeFamilies.length);
+
+        setFamilies(activeFamilies);
+        console.log("===== CONTEXT FAMILIES =====");
+        console.log("Context will store:", activeFamilies.length);
+        console.log("Context families:", activeFamilies);
+      } catch (error) {
+        console.error("LOAD FAMILIES ERROR:", error);
+      }
     };
 
-    setAuditLogs((prev) => [newLog, ...prev]);
-  };
+    const loadAidTypes = async () => {
+      try {
+        const data = await api.get("/aid-types");
+        console.log("AID TYPES API:", data.aidTypes);
+        setAidTypes(data.aidTypes || []);
+      } catch (error) {
+        console.error("LOAD AID TYPES ERROR:", error);
+      }
+    };
 
+    const loadAidDistributions = async () => {
+      try {
+        const data = await api.get("/aid-distributions");
+
+        console.log("AID DISTRIBUTIONS API:", data.distributions);
+
+        setAidDistributions(data.distributions || []);
+      } catch (error) {
+        console.error("LOAD DISTRIBUTIONS ERROR:", error);
+      }
+    };
+    const loadUsers = async () => {
+      try {
+        const data = await api.get("/users");
+        console.log("USERS API:", data.users);
+        setUsers(data.users || []);
+      } catch (error) {
+        console.error("LOAD USERS ERROR:", error);
+      }
+    };
+
+    loadUsers();
+    loadFamilies();
+    loadAidTypes();
+    loadAidDistributions();
+  }, [currentUser]);
   /*
   ========================================
   PROVIDER
@@ -182,9 +198,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         aidDistributions,
         setAidDistributions,
-
+        users,
         auditLogs,
-        addAuditLog,
 
         sidebarOpen,
         setSidebarOpen,

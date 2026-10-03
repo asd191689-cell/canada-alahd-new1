@@ -1,30 +1,34 @@
-import { useApp } from '../../context/AppContext';
-import { Menu, Bell, Search } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useApp } from "../../context/AppContext";
+import { Menu, Bell, Search } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 const pageTitles: Record<string, string> = {
-  '/': 'لوحة التحكم الرئيسية',
-  '/families': 'إدارة العائلات والأفراد',
-  '/families/new': 'تسجيل عائلة جديدة',
-  '/aid': 'نظام تتبع المساعدات',
-  '/reports': 'التقارير وتصدير البيانات',
-  '/audit': 'سجل التدقيق والمراقبة',
-  '/users': 'إدارة المستخدمين والصلاحيات',
+  "/": "لوحة التحكم الرئيسية",
+  "/families": "إدارة العائلات والأفراد",
+  "/families/new": "تسجيل عائلة جديدة",
+  "/aid": "نظام تتبع المساعدات",
+  "/reports": "التقارير وتصدير البيانات",
+  "/audit": "سجل التدقيق والمراقبة",
+  "/users": "إدارة المستخدمين والصلاحيات",
 };
 
 export default function Header() {
   const { sidebarOpen, setSidebarOpen } = useApp();
   const location = useLocation();
 
-  const title = Object.entries(pageTitles).find(([path]) =>
-    path === location.pathname || (path !== '/' && location.pathname.startsWith(path))
-  )?.[1] || 'نظام مخيم كندا العهد';
+  const title =
+    Object.entries(pageTitles).find(
+      ([path]) =>
+        path === location.pathname ||
+        (path !== "/" && location.pathname.startsWith(path)),
+    )?.[1] || "نظام مخيم كندا العهد";
 
   return (
     <header className="bg-white border-b border-gray-100 shadow-sm px-4 py-3 flex items-center gap-4 sticky top-0 z-10">
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="p-2 rounded-xl hover:bg-gray-100 text-gray-600 transition-all"
+        aria-label="فتح أو إغلاق القائمة الجانبية"
+        className="p-2 min-w-11 min-h-11 rounded-xl hover:bg-gray-100 text-gray-600 transition-all"
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -32,7 +36,12 @@ export default function Header() {
       <div className="flex-1">
         <h2 className="font-bold text-gray-800 text-base">{title}</h2>
         <p className="text-xs text-gray-400">
-          {new Date().toLocaleDateString('ar-IQ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          {new Date().toLocaleDateString("ar-IQ", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
         </p>
       </div>
 
@@ -45,7 +54,10 @@ export default function Header() {
         />
       </div>
 
-      <button className="relative p-2 rounded-xl hover:bg-gray-100 text-gray-600 transition-all">
+      <button
+        aria-label="الإشعارات"
+        className="relative p-2 min-w-11 min-h-11 rounded-xl hover:bg-gray-100 text-gray-600 transition-all"
+      >
         <Bell className="w-5 h-5" />
         <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>
       </button>

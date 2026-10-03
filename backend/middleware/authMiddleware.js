@@ -7,11 +7,18 @@ const authMiddleware = (req, res, next) => {
     if (!authHeader) {
       return res.status(401).json({
         success: false,
-        message: "No token provided",
+        message: "لم يتم إرسال التوكن.",
       });
     }
 
-    const token = authHeader.split(" ")[1];
+    const [scheme, token] = authHeader.split(" ");
+
+    if (scheme !== "Bearer" || !token) {
+      return res.status(401).json({
+        success: false,
+        message: "صيغة التوكن غير صالحة.",
+      });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -21,7 +28,7 @@ const authMiddleware = (req, res, next) => {
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message: "Invalid token",
+      message: "التوكن غير صالح أو منتهي الصلاحية.",
     });
   }
 };
