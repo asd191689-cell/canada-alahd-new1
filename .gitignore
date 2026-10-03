@@ -7,4 +7,5 @@ build/
 backend/uploads/
 uploads/
 backend/.env.before-neon
-backups/
+backups/.env.local
+.env.local
