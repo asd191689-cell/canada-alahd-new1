@@ -9,3 +9,5 @@ uploads/
 backend/.env.before-neon
 backups/.env.local
 .env.local
+.vercel
+.env*

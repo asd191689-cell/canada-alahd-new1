@@ -4,11 +4,10 @@ const authorize = require("../middleware/authorize");
 const express = require("express");
 const upload = require("../middleware/upload");
 const router = express.Router();
-
+const { put } = require("@vercel/blob");
 const pool = require("../config/db");
 const auditLogger = require("../services/auditLogger");
-const path = require("path");
-const fs = require("fs/promises");
+const { put, get, del } = require("@vercel/blob");
 // GET all documents for a family
 router.get(
   "/",
@@ -116,27 +115,39 @@ router.post(
 
       const family = familyResult.rows[0];
 
+      const safeFileName = req.file.originalname.replace(
+        /[^a-zA-Z0-9._-]/g,
+        "_",
+      );
+
+      const blobPath = `documents/family-${familyId}/${Date.now()}-${safeFileName}`;
+
+      const blob = await put(blobPath, req.file.buffer, {
+        access: "private",
+        contentType: req.file.mimetype,
+      });
+
       const result = await pool.query(
         `
-        INSERT INTO documents
-        (
-          family_id,
-          head_national_id,
-          type,
-          name,
-          file_url,
-          uploaded_by
-        )
-        VALUES
-        ($1,$2,$3,$4,$5,$6)
-        RETURNING *
-        `,
+  INSERT INTO documents
+  (
+    family_id,
+    head_national_id,
+    type,
+    name,
+    file_url,
+    uploaded_by
+  )
+  VALUES
+  ($1,$2,$3,$4,$5,$6)
+  RETURNING *
+  `,
         [
           familyId,
           nationalId,
           documentType,
           req.file.originalname,
-          `/uploads/${req.file.filename}`,
+          blob.pathname,
           req.user.id,
         ],
       );
@@ -228,10 +239,28 @@ router.get(
         });
       }
 
-      // file_url مخزن بالشكل:
+      // file_url may be:
       // /uploads/filename.pdf
-      const relativePath = document.file_url.replace(/^\/+/, "");
+      // or a full URL such as:
+      // https://....blob.vercel-storage.com/filename.pdf
 
+      if (!document.file_url) {
+        return res.status(404).json({
+          success: false,
+          message: "ملف الوثيقة غير موجود",
+        });
+      }
+
+      // إذا كان الملف مخزنًا على Vercel Blob أو أي Storage خارجي
+      if (
+        document.file_url.startsWith("http://") ||
+        document.file_url.startsWith("https://")
+      ) {
+        return res.redirect(document.file_url);
+      }
+
+      // إذا كان الملف محليًا
+      const relativePath = document.file_url.replace(/^\/+/, "");
       const filePath = path.resolve(relativePath);
 
       return res.sendFile(filePath, (err) => {
@@ -346,7 +375,6 @@ router.put(
 );
 
 // DELETE document
-// DELETE document
 router.delete(
   "/:id",
   authMiddleware,
@@ -408,28 +436,65 @@ router.delete(
       };
 
       /*
-       * تحديد ملف الوثيقة بأمان داخل backend/uploads فقط
+       * حذف الملف من التخزين
+       *
+       * إذا كان file_url رابط Vercel Blob:
+       * يتم حذفه باستخدام del()
+       *
+       * إذا كان file_url مسارًا قديمًا داخل uploads:
+       * يتم حذفه من القرص المحلي.
        */
-      let filePath = null;
 
       if (document.file_url) {
-        const normalizedFileUrl = String(document.file_url).replace(/^\/+/, "");
+        const fileUrl = String(document.file_url).trim();
 
-        const uploadsDir = path.resolve(__dirname, "../uploads");
-        const candidatePath = path.resolve(__dirname, "..", normalizedFileUrl);
-
-        const uploadsPrefix = `${uploadsDir}${path.sep}`;
-
-        if (!candidatePath.startsWith(uploadsPrefix)) {
-          console.error("رفض حذف ملف خارج مجلد uploads:", document.file_url);
-
-          return res.status(400).json({
-            success: false,
-            message: "مسار ملف الوثيقة غير صالح.",
-          });
+        // ==============================
+        // Vercel Blob
+        // ==============================
+        if (fileUrl.startsWith("https://") || fileUrl.startsWith("http://")) {
+          try {
+            await del(fileUrl);
+            console.log("Blob deleted successfully:", fileUrl);
+          } catch (blobError) {
+            console.error("Blob deletion error:", blobError);
+          }
         }
 
-        filePath = candidatePath;
+        // ==============================
+        // Old local uploads
+        // ==============================
+        else {
+          try {
+            const normalizedFileUrl = fileUrl.replace(/^\/+/, "");
+
+            const uploadsDir = path.resolve(__dirname, "../uploads");
+            const candidatePath = path.resolve(
+              __dirname,
+              "..",
+              normalizedFileUrl,
+            );
+
+            const uploadsPrefix = `${uploadsDir}${path.sep}`;
+
+            if (candidatePath.startsWith(uploadsPrefix)) {
+              try {
+                await fs.unlink(candidatePath);
+                console.log("Local document deleted:", candidatePath);
+              } catch (fileError) {
+                if (fileError.code !== "ENOENT") {
+                  console.error("Document file deletion error:", fileError);
+                }
+              }
+            } else {
+              console.error(
+                "رفض حذف ملف خارج مجلد uploads:",
+                document.file_url,
+              );
+            }
+          } catch (filePathError) {
+            console.error("Local document path error:", filePathError);
+          }
+        }
       }
 
       /*
@@ -438,21 +503,8 @@ router.delete(
       await pool.query("DELETE FROM documents WHERE id = $1", [documentId]);
 
       /*
-       * حذف الملف الفعلي من التخزين
-       *
-       * ENOENT = الملف غير موجود أصلًا،
-       * وهذا لا يمنع نجاح حذف سجل الوثيقة.
+       * تجهيز سجل التدقيق
        */
-      if (filePath) {
-        try {
-          await fs.unlink(filePath);
-        } catch (fileError) {
-          if (fileError.code !== "ENOENT") {
-            console.error("Document file deletion error:", fileError);
-          }
-        }
-      }
-
       const auditDetails = [
         `تم حذف الوثيقة "${document.name}".`,
         `العائلة: ${
@@ -464,6 +516,9 @@ router.delete(
         `حالة الوثيقة: ${formatDocumentStatus(document.status)}.`,
       ].join("\n");
 
+      /*
+       * تسجيل العملية في Audit Log
+       */
       await auditLogger(
         req.user.id,
         "DELETE_DOCUMENT",
