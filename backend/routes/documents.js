@@ -1,13 +1,20 @@
 const { mapDocument } = require("../mappers/documentMapper");
+
 const authMiddleware = require("../middleware/authMiddleware");
 const authorize = require("../middleware/authorize");
+
 const express = require("express");
+const path = require("path");
+const fs = require("fs");
+
 const upload = require("../middleware/upload");
+
 const router = express.Router();
-const { put } = require("@vercel/blob");
+
+const { put, del } = require("@vercel/blob");
+
 const pool = require("../config/db");
 const auditLogger = require("../services/auditLogger");
-const { put, get, del } = require("@vercel/blob");
 // GET all documents for a family
 router.get(
   "/",
