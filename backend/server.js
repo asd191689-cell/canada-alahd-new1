@@ -17,12 +17,6 @@ app.set("trust proxy", 1);
 const pool = require("./config/db");
 
 /* ================================
-   Database Connection
-================================ */
-
-const pool = require("./config/db");
-
-/* ================================
    Security Middleware
 ================================ */
 
@@ -43,9 +37,24 @@ app.use(limiter);
 ================================ */
 
 const corsOptions = {
-  origin: "https://canada-alahd-frontend.vercel.app",
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "https://canada-alahd-frontend.vercel.app",
+      "http://localhost:5173",
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
   allowedHeaders: ["Content-Type", "Authorization"],
+
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
