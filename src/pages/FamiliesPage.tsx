@@ -21,6 +21,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import type { Family, Document } from "../types";
 
@@ -59,6 +60,9 @@ export default function FamiliesPage() {
   >(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [previewingDocumentId, setPreviewingDocumentId] = useState<
+    number | null
+  >(null);
   const loadFamilies = async () => {
     try {
       setLoading(true);
@@ -79,17 +83,63 @@ export default function FamiliesPage() {
   };
 
   const previewFamilyDocument = async (doc: Document) => {
+    setPreviewingDocumentId(doc.id);
+
+    const startTime = Date.now();
+
     const previewWindow = window.open("", "_blank");
 
     if (!previewWindow) {
+      setPreviewingDocumentId(null);
+
       toast.error("يرجى السماح بفتح النوافذ الجديدة في المتصفح.");
       return;
     }
+
+    // نعرض للمستخدم أن المعاينة قيد التحميل
+    previewWindow.document.write(`
+    <html>
+      <head>
+        <title>جاري تحميل الوثيقة...</title>
+      </head>
+
+      <body style="
+        margin:0;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        height:100vh;
+        font-family:Arial,sans-serif;
+      ">
+        <div style="text-align:center;">
+          <div style="font-size:18px;margin-bottom:12px;">
+            جاري تحميل الوثيقة...
+          </div>
+
+          <div style="font-size:14px;color:#666;">
+            يرجى الانتظار
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+
+    previewWindow.document.close();
 
     try {
       const blob = await api.get(`/documents/${doc.id}/download`, {
         responseType: "blob",
       });
+
+      // لا نخلي الزر يومض بسرعة إذا كان الملف صغير
+      const elapsed = Date.now() - startTime;
+      const minimumLoadingTime = 500;
+
+      if (elapsed < minimumLoadingTime) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, minimumLoadingTime - elapsed),
+        );
+      }
 
       const url = window.URL.createObjectURL(blob);
 
@@ -104,6 +154,8 @@ export default function FamiliesPage() {
       console.error("PREVIEW FAMILY DOCUMENT ERROR:", error);
 
       toast.error("تعذر معاينة الوثيقة.");
+    } finally {
+      setPreviewingDocumentId(null);
     }
   };
 
@@ -1316,9 +1368,17 @@ export default function FamiliesPage() {
                             <button
                               type="button"
                               onClick={() => previewFamilyDocument(doc)}
-                              className="flex-shrink-0 rounded-lg bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 transition hover:bg-green-100"
+                              disabled={previewingDocumentId === doc.id}
+                              className="flex-shrink-0 rounded-lg bg-green-50 px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              عرض
+                              {previewingDocumentId === doc.id ? (
+                                <>
+                                  <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />
+                                  جاري المعاينة...
+                                </>
+                              ) : (
+                                "عرض"
+                              )}
                             </button>
                           </div>
                         ))}

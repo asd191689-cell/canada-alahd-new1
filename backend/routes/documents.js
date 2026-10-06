@@ -11,7 +11,7 @@ const upload = require("../middleware/upload");
 
 const router = express.Router();
 
-const { put, get, del } = require("@vercel/blob");
+const { put, get, del, issueSignedToken, presignUrl } = require("@vercel/blob");
 
 const pool = require("../config/db");
 const auditLogger = require("../services/auditLogger");
@@ -200,6 +200,87 @@ router.post(
       res.status(500).json({
         success: false,
         message: "حدث خطأ داخلي في الخادم.",
+      });
+    }
+  },
+);
+// SIGNED URL - direct private Blob access
+router.get(
+  "/:id/signed-url",
+  authMiddleware,
+  authorize(["admin", "representative", "employee"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const documentId = Number(id);
+
+      if (!Number.isInteger(documentId) || documentId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "معرّف الوثيقة غير صالح.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT id, name, file_url
+        FROM documents
+        WHERE id = $1
+        `,
+        [documentId],
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "الوثيقة غير موجودة.",
+        });
+      }
+
+      const document = result.rows[0];
+
+      if (!document.file_url) {
+        return res.status(404).json({
+          success: false,
+          message: "ملف الوثيقة غير موجود.",
+        });
+      }
+
+      const fileUrl = String(document.file_url).trim();
+
+      // الملفات الموجودة على Vercel Blob
+      if (!fileUrl.startsWith("documents/")) {
+        return res.status(400).json({
+          success: false,
+          message: "الملف لا يستخدم تخزين Vercel Blob.",
+        });
+      }
+
+      const validUntil = Date.now() + 5 * 60 * 1000;
+
+      const token = await issueSignedToken({
+        pathname: fileUrl,
+        operations: ["get"],
+        validUntil,
+      });
+
+      const { presignedUrl } = await presignUrl(token, {
+        pathname: fileUrl,
+        operation: "get",
+        validUntil,
+      });
+
+      return res.json({
+        success: true,
+        url: presignedUrl,
+        name: document.name,
+      });
+    } catch (err) {
+      console.error("SIGNED URL ERROR:", err);
+
+      return res.status(500).json({
+        success: false,
+        message: "تعذر إنشاء رابط الوصول إلى الوثيقة.",
       });
     }
   },
