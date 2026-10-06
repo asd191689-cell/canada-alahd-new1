@@ -11,7 +11,7 @@ const upload = require("../middleware/upload");
 
 const router = express.Router();
 
-const { put, del } = require("@vercel/blob");
+const { put, get, del } = require("@vercel/blob");
 
 const pool = require("../config/db");
 const auditLogger = require("../services/auditLogger");
@@ -233,7 +233,7 @@ router.get(
       if (result.rows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "الوثيقة غير موجودة",
+          message: "الوثيقة غير موجودة.",
         });
       }
 
@@ -242,32 +242,87 @@ router.get(
       if (!document.file_url) {
         return res.status(404).json({
           success: false,
-          message: "ملف الوثيقة غير موجود",
+          message: "ملف الوثيقة غير موجود.",
         });
       }
 
-      // file_url may be:
-      // /uploads/filename.pdf
-      // or a full URL such as:
-      // https://....blob.vercel-storage.com/filename.pdf
+      const fileUrl = String(document.file_url).trim();
 
-      if (!document.file_url) {
-        return res.status(404).json({
-          success: false,
-          message: "ملف الوثيقة غير موجود",
-        });
+      // ==========================================
+      // Vercel Blob - private
+      // ==========================================
+      if (fileUrl.startsWith("documents/")) {
+        try {
+          const result = await get(fileUrl, {
+            access: "private",
+          });
+
+          if (!result || !result.stream || !result.blob) {
+            console.error("BLOB GET EMPTY:", {
+              documentId,
+              fileUrl,
+              result,
+            });
+
+            return res.status(404).json({
+              success: false,
+              message: "ملف الوثيقة غير موجود في التخزين.",
+            });
+          }
+
+          const contentType =
+            result.blob.contentType || "application/octet-stream";
+
+          res.statusCode = 200;
+
+          res.setHeader("Content-Type", contentType);
+
+          res.setHeader(
+            "Content-Disposition",
+            `inline; filename*=UTF-8''${encodeURIComponent(document.name)}`,
+          );
+
+          if (result.blob.size) {
+            res.setHeader("Content-Length", String(result.blob.size));
+          }
+
+          // Vercel Blob returns a Web ReadableStream.
+          // Convert it to Node's response stream safely.
+          const reader = result.stream.getReader();
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+
+              if (done) break;
+
+              res.write(Buffer.from(value));
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          return res.end();
+        } catch (blobError) {
+          console.error("VERCEL BLOB GET ERROR:", {
+            documentId,
+            fileUrl,
+            message: blobError?.message,
+            stack: blobError?.stack,
+          });
+
+          if (!res.headersSent) {
+            return res.status(404).json({
+              success: false,
+              message: "تعذر تحميل ملف الوثيقة من التخزين.",
+            });
+          }
+        }
       }
-
-      // إذا كان الملف مخزنًا على Vercel Blob أو أي Storage خارجي
-      if (
-        document.file_url.startsWith("http://") ||
-        document.file_url.startsWith("https://")
-      ) {
-        return res.redirect(document.file_url);
-      }
-
-      // إذا كان الملف محليًا
-      const relativePath = document.file_url.replace(/^\/+/, "");
+      // ==========================================
+      // الملفات المحلية القديمة
+      // ==========================================
+      const relativePath = fileUrl.replace(/^\/+/, "");
       const filePath = path.resolve(relativePath);
 
       return res.sendFile(filePath, (err) => {
@@ -277,18 +332,20 @@ router.get(
           if (!res.headersSent) {
             return res.status(404).json({
               success: false,
-              message: "تعذر العثور على ملف الوثيقة",
+              message: "تعذر العثور على ملف الوثيقة.",
             });
           }
         }
       });
     } catch (err) {
-      console.error("Download document error:", err);
+      console.error("DOWNLOAD DOCUMENT ERROR:", err);
 
-      res.status(500).json({
-        success: false,
-        message: "حدث خطأ أثناء تحميل الوثيقة",
-      });
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          message: "حدث خطأ أثناء تحميل الوثيقة.",
+        });
+      }
     }
   },
 );
@@ -458,7 +515,10 @@ router.delete(
         // ==============================
         // Vercel Blob
         // ==============================
-        if (fileUrl.startsWith("https://") || fileUrl.startsWith("http://")) {
+        if (
+          fileUrl.startsWith("documents/") ||
+          fileUrl.includes(".blob.vercel-storage.com")
+        ) {
           try {
             await del(fileUrl);
             console.log("Blob deleted successfully:", fileUrl);
