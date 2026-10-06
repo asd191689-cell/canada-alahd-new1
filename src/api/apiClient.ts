@@ -6,7 +6,10 @@ type RequestOptions = RequestInit & {
   responseType?: "json" | "blob";
 };
 
-function getHeaders(body?: BodyInit | null): HeadersInit {
+function getHeaders(
+  body?: BodyInit | null,
+  responseType?: "json" | "blob",
+): HeadersInit {
   const token = localStorage.getItem("token");
 
   const headers: HeadersInit = {};
@@ -16,13 +19,18 @@ function getHeaders(body?: BodyInit | null): HeadersInit {
     headers["Content-Type"] = "application/json";
   }
 
+  if (responseType === "blob") {
+    headers["Accept"] = "application/pdf,image/*,application/octet-stream,*/*";
+  } else {
+    headers["Accept"] = "application/json";
+  }
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
   return headers;
 }
-
 async function request(endpoint: string, options: RequestOptions = {}) {
   const controller = new AbortController();
 
@@ -34,8 +42,9 @@ async function request(endpoint: string, options: RequestOptions = {}) {
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       signal: controller.signal,
+      cache: "no-store",
       headers: {
-        ...getHeaders(options.body),
+        ...getHeaders(options.body, options.responseType),
         ...options.headers,
       },
     });

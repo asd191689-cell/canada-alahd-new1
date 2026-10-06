@@ -279,10 +279,13 @@ export default function DocumentsPage() {
   const downloadDocument = async (doc: Document) => {
     try {
       setDownloadingDocumentId(doc.id);
+
       const startTime = Date.now();
+
       const blob = await api.get(`/documents/${doc.id}/download`, {
         responseType: "blob",
       });
+
       const elapsed = Date.now() - startTime;
       const minimumLoadingTime = 500;
 
@@ -292,25 +295,34 @@ export default function DocumentsPage() {
         );
       }
 
+      // التأكد أن الرد فعلاً ملف
+      if (!(blob instanceof Blob) || blob.size === 0) {
+        throw new Error("الملف فارغ أو غير صالح.");
+      }
+
       const url = window.URL.createObjectURL(blob);
 
       const link = document.createElement("a");
-
       link.href = url;
-      link.download = doc.name;
+      link.download = doc.name || "document";
+      link.style.display = "none";
 
       document.body.appendChild(link);
       link.click();
       link.remove();
 
-      window.URL.revokeObjectURL(url);
+      // مهم جدًا:
+      // لا تحذف Blob URL مباشرة بعد click
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 60000);
     } catch (error) {
       console.error("DOWNLOAD DOCUMENT ERROR:", error);
 
       showNotification(
         "error",
         "تعذر تحميل الوثيقة",
-        "ليس لديك صلاحية للوصول إلى هذه الوثيقة أو حدث خطأ أثناء التحميل.",
+        "تعذر تحميل ملف الوثيقة. يرجى المحاولة مرة أخرى.",
       );
     } finally {
       setDownloadingDocumentId(null);

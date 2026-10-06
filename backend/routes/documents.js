@@ -360,7 +360,7 @@ router.get(
 
           res.setHeader(
             "Content-Disposition",
-            `inline; filename*=UTF-8''${encodeURIComponent(document.name)}`,
+            `attachment; filename*=UTF-8''${encodeURIComponent(document.name)}`,
           );
 
           if (result.blob.size) {
