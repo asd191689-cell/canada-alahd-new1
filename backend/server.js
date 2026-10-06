@@ -7,6 +7,15 @@ require("dotenv").config();
 
 const app = express();
 
+// التطبيق يعمل خلف Vercel / Reverse Proxy
+app.set("trust proxy", 1);
+
+/* ================================
+   Database Connection
+================================ */
+
+const pool = require("./config/db");
+
 /* ================================
    Database Connection
 ================================ */
