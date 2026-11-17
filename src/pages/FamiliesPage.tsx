@@ -459,10 +459,18 @@ export default function FamiliesPage() {
           },
           {
             label: "إجمالي الأفراد",
+
             value: families
               .filter((f) => !f.isDeleted)
               .reduce(
-                (total, f) => total + Number(f.totalFamilyMembers || 1),
+                (total, f) =>
+                  total +
+                  Number(
+                    f.membersCount ??
+                      f.totalFamilyMembers ??
+                      f.members?.length ??
+                      1,
+                  ),
                 0,
               ),
             icon: UserRound,

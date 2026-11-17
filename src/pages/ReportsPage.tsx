@@ -219,29 +219,31 @@ export default function ReportsPage() {
       // ============================================================
 
       const COLORS = {
-        primary: "15803D",
-        primaryDark: "14532D",
-        primarySoft: "DCFCE7",
-        primaryVerySoft: "F0FDF4",
-
+        // High-contrast, print-friendly institutional palette.
+        primary: "087443",
+        primaryDark: "073B2E",
+        primaryDeep: "052E24",
+        primarySoft: "DDF3E7",
+        primaryVerySoft: "EFF8F2",
         accent: "0F766E",
+        accentGold: "C59A42",
 
         white: "FFFFFF",
-        text: "1F2937",
-        muted: "64748B",
+        text: "172B24",
+        muted: "52665D",
 
-        border: "D7E2DB",
-        borderDark: "B8C9BE",
+        border: "C8D8CF",
+        borderDark: "91AA9B",
 
         rowEven: "FFFFFF",
-        rowOdd: "F8FBF9",
+        rowOdd: "F2F7F4",
 
-        familyHead: "E2F5E8",
-        familyHeadBorder: "8BC79A",
+        familyHead: "D9F0E1",
+        familyHeadBorder: "4F9A6C",
 
-        warning: "FFF7D6",
-        danger: "FDECEC",
-        info: "EAF4FF",
+        warning: "FFF3D6",
+        danger: "FCE8E8",
+        info: "E8F1FA",
       };
 
       const argb = (hex: string) => `FF${hex}`;
@@ -341,6 +343,10 @@ export default function ReportsPage() {
 
           person: "فرد",
           individual: "فرد",
+
+          pending: "قيد المراجعة",
+          approved: "معتمدة",
+          rejected: "مرفوضة",
         };
 
         return map[v] ?? v;
@@ -440,7 +446,8 @@ export default function ReportsPage() {
           },
         ];
 
-        worksheet.properties.defaultRowHeight = 24;
+        worksheet.properties.defaultRowHeight = 25;
+        worksheet.properties.tabColor = { argb: argb(COLORS.primary) };
 
         // ----------------------------------------------------------
         // Page setup
@@ -478,29 +485,29 @@ export default function ReportsPage() {
         worksheet.mergeCells(`A1:${lastColumnLetter}1`);
 
         const titleCell = worksheet.getCell("A1");
-
         titleCell.value = "نظام إدارة كندا العهد";
         titleCell.font = {
-          name: "Segoe UI",
-          size: 19,
+          name: "Arial",
+          size: 21,
           bold: true,
           color: { argb: argb(COLORS.white) },
         };
-
         titleCell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: argb(COLORS.primaryDark) },
+          fgColor: { argb: argb(COLORS.primaryDeep) },
         };
-
         titleCell.alignment = {
           horizontal: "center",
           vertical: "middle",
         };
-
-        titleCell.border = mediumBottomBorder;
-
-        worksheet.getRow(1).height = 36;
+        titleCell.border = {
+          bottom: {
+            style: "thick",
+            color: { argb: argb(COLORS.accentGold) },
+          },
+        };
+        worksheet.getRow(1).height = 44;
 
         // ----------------------------------------------------------
         // Report title
@@ -509,28 +516,29 @@ export default function ReportsPage() {
         worksheet.mergeCells(`A2:${lastColumnLetter}2`);
 
         const reportTitleCell = worksheet.getCell("A2");
-
         reportTitleCell.value = title;
-
         reportTitleCell.font = {
-          name: "Segoe UI",
-          size: 16,
+          name: "Arial",
+          size: 18,
           bold: true,
-          color: { argb: argb(COLORS.primaryDark) },
+          color: { argb: argb(COLORS.primaryDeep) },
         };
-
         reportTitleCell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: argb(COLORS.primaryVerySoft) },
+          fgColor: { argb: argb(COLORS.primarySoft) },
         };
-
         reportTitleCell.alignment = {
           horizontal: "center",
           vertical: "middle",
         };
-
-        worksheet.getRow(2).height = 32;
+        reportTitleCell.border = {
+          bottom: {
+            style: "medium",
+            color: { argb: argb(COLORS.primary) },
+          },
+        };
+        worksheet.getRow(2).height = 38;
 
         // ----------------------------------------------------------
         // Export information
@@ -539,22 +547,24 @@ export default function ReportsPage() {
         worksheet.mergeCells(`A3:${lastColumnLetter}3`);
 
         const metaCell = worksheet.getCell("A3");
-
         metaCell.value = `تاريخ التصدير: ${exportDate}   |   مصدر البيانات: النظام   |   البيانات لم يتم تعديلها أثناء التصدير`;
-
         metaCell.font = {
-          name: "Segoe UI",
+          name: "Arial",
           size: 10,
+          bold: true,
           color: { argb: argb(COLORS.muted) },
-          italic: true,
         };
-
+        metaCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: argb("E8F1EC") },
+        };
         metaCell.alignment = {
           horizontal: "center",
           vertical: "middle",
         };
-
-        worksheet.getRow(3).height = 24;
+        metaCell.border = thinBorder;
+        worksheet.getRow(3).height = 27;
 
         // ----------------------------------------------------------
         // Statistics cards
@@ -575,11 +585,9 @@ export default function ReportsPage() {
 
           stats.forEach((stat, index) => {
             const range = cardRanges[index];
-
             if (!range) return;
 
             const [labelStart, labelEnd, valueStart, valueEnd] = range;
-
             worksheet.mergeCells(`${labelStart}:${labelEnd}`);
             worksheet.mergeCells(`${valueStart}:${valueEnd}`);
 
@@ -590,48 +598,64 @@ export default function ReportsPage() {
             valueCell.value = stat.value;
 
             labelCell.font = {
-              name: "Segoe UI",
-              size: 9,
+              name: "Arial",
+              size: 10,
               bold: true,
               color: { argb: argb(COLORS.muted) },
             };
-
             valueCell.font = {
-              name: "Segoe UI",
-              size: 14,
+              name: "Arial",
+              size: 17,
               bold: true,
-              color: { argb: argb(COLORS.primaryDark) },
+              color: { argb: argb(COLORS.primaryDeep) },
             };
 
             labelCell.fill = {
               type: "pattern",
               pattern: "solid",
-              fgColor: { argb: argb(COLORS.primaryVerySoft) },
+              fgColor: { argb: argb("E3F1E8") },
             };
-
             valueCell.fill = {
               type: "pattern",
               pattern: "solid",
-              fgColor: { argb: argb(COLORS.white) },
+              fgColor: { argb: argb("F7FBF8") },
             };
 
             labelCell.alignment = {
               horizontal: "center",
               vertical: "middle",
+              wrapText: true,
             };
-
             valueCell.alignment = {
               horizontal: "center",
               vertical: "middle",
             };
 
-            labelCell.border = thinBorder;
-            valueCell.border = thinBorder;
+            const cardBorder = {
+              top: {
+                style: "thin" as const,
+                color: { argb: argb(COLORS.borderDark) },
+              },
+              bottom: {
+                style: "medium" as const,
+                color: { argb: argb(COLORS.primary) },
+              },
+              left: {
+                style: "thin" as const,
+                color: { argb: argb(COLORS.borderDark) },
+              },
+              right: {
+                style: "thin" as const,
+                color: { argb: argb(COLORS.borderDark) },
+              },
+            };
+            labelCell.border = cardBorder;
+            valueCell.border = cardBorder;
           });
         }
 
-        worksheet.getRow(4).height = 22;
-        worksheet.getRow(5).height = 30;
+        worksheet.getRow(4).height = 26;
+        worksheet.getRow(5).height = 36;
 
         // ----------------------------------------------------------
         // Note / legend
@@ -640,32 +664,32 @@ export default function ReportsPage() {
         worksheet.mergeCells(`A6:${lastColumnLetter}6`);
 
         const noteCell = worksheet.getCell("A6");
-
         noteCell.value =
           options?.note ||
           "يمكن استخدام أسهم التصفية في رأس الجدول للبحث والفرز حسب أي حقل.";
-
         noteCell.font = {
-          name: "Segoe UI",
-          size: 9,
-          color: { argb: argb(COLORS.muted) },
+          name: "Arial",
+          size: 10,
+          bold: true,
+          color: { argb: argb("33483D") },
         };
-
         noteCell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: argb("F8FAFC") },
+          fgColor: { argb: argb("F2F6F3") },
         };
-
         noteCell.alignment = {
           horizontal: "right",
           vertical: "middle",
           wrapText: true,
         };
-
-        noteCell.border = thinBorder;
-
-        worksheet.getRow(6).height = 30;
+        noteCell.border = {
+          top: { style: "thin", color: { argb: argb(COLORS.border) } },
+          bottom: { style: "thin", color: { argb: argb(COLORS.border) } },
+          left: { style: "thin", color: { argb: argb(COLORS.border) } },
+          right: { style: "thin", color: { argb: argb(COLORS.border) } },
+        };
+        worksheet.getRow(6).height = 34;
 
         // ----------------------------------------------------------
         // Spacer
@@ -693,8 +717,8 @@ export default function ReportsPage() {
           const column = columns[columnNumber - 1];
 
           cell.font = {
-            name: "Segoe UI",
-            size: 10,
+            name: "Arial",
+            size: 11,
             bold: true,
             color: { argb: argb(COLORS.white) },
           };
@@ -771,7 +795,8 @@ export default function ReportsPage() {
             }),
           ];
 
-          row.height = 30;
+          // Comfortable, readable body typography across all Excel reports.
+          row.height = 36;
 
           const isFamilyHead =
             options?.familyHeadRows?.includes(excelRowNumber) ?? false;
@@ -780,8 +805,8 @@ export default function ReportsPage() {
             const column = columns[columnNumber - 1];
 
             cell.font = {
-              name: "Segoe UI",
-              size: isFamilyHead ? 10 : 9.5,
+              name: "Arial",
+              size: isFamilyHead ? 12 : 11.5,
               bold: isFamilyHead,
               color: { argb: argb(COLORS.text) },
             };
@@ -900,7 +925,7 @@ export default function ReportsPage() {
           cell.fill = {
             type: "pattern",
             pattern: "solid",
-            fgColor: { argb: argb(COLORS.primary) },
+            fgColor: { argb: argb(COLORS.primaryDark) },
           };
 
           cell.alignment = {
@@ -908,7 +933,29 @@ export default function ReportsPage() {
             vertical: "middle",
             wrapText: true,
           };
+          cell.border = {
+            top: { style: "medium", color: { argb: argb(COLORS.primaryDeep) } },
+            bottom: {
+              style: "medium",
+              color: { argb: argb(COLORS.primaryDeep) },
+            },
+            left: { style: "thin", color: { argb: argb("6E9B83") } },
+            right: { style: "thin", color: { argb: argb("6E9B83") } },
+          };
         });
+
+        worksheet.getRow(headerRowNumber).height = 48;
+        worksheet.views = [
+          {
+            rightToLeft: true,
+            state: "frozen",
+            ySplit: 8,
+            zoomScale: 85,
+            showGridLines: false,
+          },
+        ];
+        worksheet.pageSetup.printTitlesRow = "1:8";
+        worksheet.pageSetup.horizontalCentered = true;
 
         return worksheet;
       };
@@ -918,83 +965,121 @@ export default function ReportsPage() {
       // ============================================================
 
       if (reportType === "families") {
+        // ورقة العائلات: صف واحد لكل عائلة، وتشمل جميع حقول Family
+        // مع بيانات الزوجة الأساسية المستخرجة من سجلها داخل members.
         const columns: ReportColumn[] = [
           {
-            header: "رقم الملف",
-            key: "fileNumber",
+            header: "معرف العائلة",
+            key: "familyId",
             width: 14,
             type: "text",
             align: "center",
           },
           {
-            header: "اسم رب الأسرة",
-            key: "headName",
-            width: 25,
+            header: "رقم الملف",
+            key: "fileNumber",
+            width: 16,
+            type: "text",
+            align: "center",
           },
+
+          { header: "اسم رب الأسرة", key: "headName", width: 26 },
           {
             header: "رقم هوية رب الأسرة",
             key: "headNationalId",
-            width: 20,
+            width: 21,
+            type: "text",
             align: "center",
           },
           {
             header: "تاريخ ميلاد رب الأسرة",
             key: "headDateOfBirth",
-            width: 18,
+            width: 19,
             type: "date",
             align: "center",
           },
           {
             header: "عمر رب الأسرة",
             key: "headAge",
-            width: 14,
+            width: 13,
             type: "number",
             align: "center",
           },
           {
-            header: "الجنس",
-            key: "gender",
-            width: 12,
+            header: "جنس رب الأسرة",
+            key: "headGender",
+            width: 14,
             align: "center",
           },
+          {
+            header: "الحالة الصحية لرب الأسرة",
+            key: "headHealthStatus",
+            width: 20,
+            align: "center",
+          },
+
+          {
+            header: "معرف سجل الزوجة",
+            key: "wifeId",
+            width: 15,
+            type: "text",
+            align: "center",
+          },
+          { header: "اسم الزوجة الرباعي", key: "wifeName", width: 28 },
+          {
+            header: "رقم هوية الزوجة",
+            key: "wifeNationalId",
+            width: 21,
+            type: "text",
+            align: "center",
+          },
+          {
+            header: "تاريخ ميلاد الزوجة",
+            key: "wifeDateOfBirth",
+            width: 19,
+            type: "date",
+            align: "center",
+          },
+          {
+            header: "عمر الزوجة",
+            key: "wifeAge",
+            width: 13,
+            type: "number",
+            align: "center",
+          },
+          {
+            header: "جنس الزوجة",
+            key: "wifeGender",
+            width: 14,
+            align: "center",
+          },
+          {
+            header: "الحالة الصحية للزوجة",
+            key: "wifeHealthStatus",
+            width: 20,
+            align: "center",
+          },
+          { header: "وصف إعاقة الزوجة", key: "wifeDisability", width: 22 },
+          { header: "ملاحظات الزوجة", key: "wifeNotes", width: 30 },
+
           {
             header: "رقم الجوال",
             key: "headPhone",
             width: 18,
+            type: "text",
             align: "center",
           },
           {
             header: "الجوال البديل",
             key: "alternatePhone",
             width: 18,
+            type: "text",
             align: "center",
           },
-          {
-            header: "الحالة الصحية",
-            key: "headHealthStatus",
-            width: 18,
-            align: "center",
-          },
-          {
-            header: "المحافظة الأصل",
-            key: "originGovernorate",
-            width: 18,
-          },
-          {
-            header: "مدينة الأصل",
-            key: "originCity",
-            width: 18,
-          },
-          {
-            header: "العنوان الحالي",
-            key: "currentAddress",
-            width: 32,
-          },
-          {
-            header: "موقع المخيم",
-            key: "campLocation",
-            width: 24,
-          },
+          { header: "المحافظة الأصل", key: "originGovernorate", width: 18 },
+          { header: "مدينة الأصل", key: "originCity", width: 18 },
+          { header: "العنوان الحالي", key: "currentAddress", width: 34 },
+          { header: "موقع المخيم", key: "campLocation", width: 24 },
           {
             header: "تاريخ الدخول",
             key: "entryDate",
@@ -1002,28 +1087,32 @@ export default function ReportsPage() {
             type: "date",
             align: "center",
           },
+
           {
             header: "الحالة الاجتماعية",
             key: "maritalStatus",
             width: 18,
             align: "center",
           },
-          {
-            header: "المعيل",
-            key: "isProvider",
-            width: 12,
-            align: "center",
-          },
+          { header: "المعيل", key: "isProvider", width: 12, align: "center" },
           {
             header: "نوع السكن",
             key: "housingType",
             width: 18,
             align: "center",
           },
+
           {
-            header: "عدد أفراد الأسرة",
+            header: "عدد أفراد الأسرة (membersCount)",
             key: "membersCount",
-            width: 16,
+            width: 20,
+            type: "number",
+            align: "center",
+          },
+          {
+            header: "إجمالي أفراد الأسرة (totalFamilyMembers)",
+            key: "totalFamilyMembers",
+            width: 23,
             type: "number",
             align: "center",
           },
@@ -1041,6 +1130,7 @@ export default function ReportsPage() {
             type: "number",
             align: "center",
           },
+
           {
             header: "ذكور 0-5",
             key: "male0to5",
@@ -1083,6 +1173,7 @@ export default function ReportsPage() {
             type: "number",
             align: "center",
           },
+
           {
             header: "إناث 0-5",
             key: "female0to5",
@@ -1125,77 +1216,204 @@ export default function ReportsPage() {
             type: "number",
             align: "center",
           },
+
+          { header: "المسجل بواسطة", key: "registeredBy", width: 22 },
           {
-            header: "الملاحظات",
-            key: "notes",
-            width: 34,
+            header: "تاريخ الإنشاء",
+            key: "createdAt",
+            width: 18,
+            type: "date",
+            align: "center",
           },
+          {
+            header: "آخر تحديث",
+            key: "updatedAt",
+            width: 18,
+            type: "date",
+            align: "center",
+          },
+          {
+            header: "حالة السجل",
+            key: "recordStatus",
+            width: 14,
+            align: "center",
+          },
+          {
+            header: "تاريخ الحذف",
+            key: "deletedAt",
+            width: 18,
+            type: "date",
+            align: "center",
+          },
+          { header: "رابط صورة العائلة", key: "photoUrl", width: 34 },
+          { header: "ملاحظات العائلة", key: "notes", width: 36 },
         ];
 
-        const rows: ReportRow[] = activeFamilies.map((f) => ({
-          fileNumber: safe(f.fileNumber),
-          headName: safe(f.headName),
-          headNationalId: safe(f.headNationalId),
-          headDateOfBirth: parseDate(f.headDateOfBirth),
-          headAge: toNumber(f.headAge),
-          gender: translate(f.gender),
-          headPhone: safe(f.headPhone),
-          alternatePhone: safe(f.alternatePhone),
-          headHealthStatus: translate(f.headHealthStatus),
-          originGovernorate: safe(f.originGovernorate),
-          originCity: safe(f.originCity),
-          currentAddress: safe(f.currentAddress),
-          campLocation: safe(f.campLocation),
-          entryDate: parseDate(f.entryDate),
-          maritalStatus: translate(f.maritalStatus),
-          isProvider: f.isProvider ? "نعم" : "لا",
-          housingType: translate(f.housingType),
+        const rows: ReportRow[] = activeFamilies.map((f) => {
+          const wife = (f.members ?? []).find(
+            (m) => String(m.relation).trim().toLowerCase() === "wife",
+          );
 
-          membersCount: toNumber(f.membersCount) ?? 0,
-          malesCount: toNumber(f.malesCount) ?? 0,
-          femalesCount: toNumber(f.femalesCount) ?? 0,
+          return {
+            familyId: safe(f.id),
+            fileNumber: safe(f.fileNumber),
 
-          male0to5: toNumber(f.male0to5) ?? 0,
-          male6to11: toNumber(f.male6to11) ?? 0,
-          male12to17: toNumber(f.male12to17) ?? 0,
-          male18to24: toNumber(f.male18to24) ?? 0,
-          male25to60: toNumber(f.male25to60) ?? 0,
-          male60Plus: toNumber(f.male60Plus) ?? 0,
+            headName: safe(f.headName),
+            headNationalId: safe(f.headNationalId),
+            headDateOfBirth: parseDate(f.headDateOfBirth),
+            headAge: toNumber(f.headAge),
+            headGender: translate(f.gender),
+            headHealthStatus: translate(f.headHealthStatus),
 
-          female0to5: toNumber(f.female0to5) ?? 0,
-          female6to11: toNumber(f.female6to11) ?? 0,
-          female12to17: toNumber(f.female12to17) ?? 0,
-          female18to24: toNumber(f.female18to24) ?? 0,
-          female25to60: toNumber(f.female25to60) ?? 0,
-          female60Plus: toNumber(f.female60Plus) ?? 0,
+            wifeId: safe(wife?.id),
+            wifeName: safe(wife?.name),
+            wifeNationalId: safe(wife?.nationalId),
+            wifeDateOfBirth: parseDate(wife?.dateOfBirth),
+            wifeAge: toNumber(wife?.age),
+            wifeGender: translate(wife?.gender),
+            wifeHealthStatus: translate(wife?.healthStatus),
+            wifeDisability: safe(wife?.disability),
+            wifeNotes: safe(wife?.notes),
 
-          notes: safe(f.notes),
-        }));
+            headPhone: safe(f.headPhone),
+            alternatePhone: safe(f.alternatePhone),
+            originGovernorate: safe(f.originGovernorate),
+            originCity: safe(f.originCity),
+            currentAddress: safe(f.currentAddress),
+            campLocation: safe(f.campLocation),
+            entryDate: parseDate(f.entryDate),
+
+            maritalStatus: translate(f.maritalStatus),
+            isProvider:
+              f.isProvider === undefined ? "" : f.isProvider ? "نعم" : "لا",
+            housingType: translate(f.housingType),
+
+            membersCount: toNumber(f.membersCount),
+            totalFamilyMembers: toNumber(f.totalFamilyMembers),
+            malesCount: toNumber(f.malesCount),
+            femalesCount: toNumber(f.femalesCount),
+
+            male0to5: toNumber(f.male0to5),
+            male6to11: toNumber(f.male6to11),
+            male12to17: toNumber(f.male12to17),
+            male18to24: toNumber(f.male18to24),
+            male25to60: toNumber(f.male25to60),
+            male60Plus: toNumber(f.male60Plus),
+
+            female0to5: toNumber(f.female0to5),
+            female6to11: toNumber(f.female6to11),
+            female12to17: toNumber(f.female12to17),
+            female18to24: toNumber(f.female18to24),
+            female25to60: toNumber(f.female25to60),
+            female60Plus: toNumber(f.female60Plus),
+
+            registeredBy: safe(f.registeredBy),
+            createdAt: parseDate(f.createdAt),
+            updatedAt: parseDate(f.updatedAt),
+            recordStatus: f.isDeleted ? "محذوف" : "نشط",
+            deletedAt: parseDate(f.deletedAt),
+            photoUrl: safe(f.photoUrl),
+            notes: safe(f.notes),
+          };
+        });
 
         createProfessionalSheet("العائلات", columns, rows, {
           tableName: "FamiliesReportTable",
-
           stats: [
-            {
-              label: "إجمالي الأسر",
-              value: activeFamilies.length,
-            },
-            {
-              label: "إجمالي الأفراد",
-              value: totalIndividuals,
-            },
-            {
-              label: "متوسط حجم الأسرة",
-              value: avgSize,
-            },
-            {
-              label: "أكبر أسرة",
-              value: maxFamilySize,
-            },
+            { label: "إجمالي الأسر النشطة", value: activeFamilies.length },
+            { label: "إجمالي الأفراد", value: totalIndividuals },
+            { label: "متوسط حجم الأسرة", value: avgSize },
+            { label: "أكبر أسرة", value: maxFamilySize },
           ],
-
-          note: "تقرير شامل للأسر. استخدم أسهم التصفية أعلى الأعمدة للبحث حسب العمر، المحافظة، الحالة الصحية، السكن، عدد الأفراد وغيرها.",
+          note: "كل صف يمثل عائلة واحدة ويشمل الحقول المسجلة للعائلة وبيانات الزوجة الأساسية. بيانات أفراد الأسرة التفصيلية تبقى في تقرير الأفراد المستقل.",
         });
+
+        // ورقة الوثائق: سجل مستقل لكل وثيقة مع ربطها بالعائلة.
+        // لا نضع قائمة الأفراد هنا لأن لها زر تقرير مستقل في الصفحة.
+        const documentColumns: ReportColumn[] = [
+          {
+            header: "معرف العائلة",
+            key: "familyId",
+            width: 14,
+            type: "text",
+            align: "center",
+          },
+          {
+            header: "رقم الملف",
+            key: "fileNumber",
+            width: 16,
+            type: "text",
+            align: "center",
+          },
+          { header: "اسم رب الأسرة", key: "headName", width: 26 },
+          {
+            header: "معرف الوثيقة",
+            key: "documentId",
+            width: 14,
+            type: "text",
+            align: "center",
+          },
+          {
+            header: "رقم هوية رب الأسرة المرتبط",
+            key: "headNationalId",
+            width: 22,
+            type: "text",
+            align: "center",
+          },
+          { header: "نوع الوثيقة", key: "documentType", width: 20 },
+          { header: "اسم الوثيقة", key: "documentName", width: 30 },
+          { header: "رابط الوثيقة", key: "documentUrl", width: 42 },
+          {
+            header: "تاريخ الرفع",
+            key: "uploadedAt",
+            width: 18,
+            type: "date",
+            align: "center",
+          },
+          {
+            header: "معرف رافع الوثيقة",
+            key: "uploadedBy",
+            width: 18,
+            type: "text",
+            align: "center",
+          },
+          {
+            header: "حالة الوثيقة",
+            key: "documentStatus",
+            width: 16,
+            align: "center",
+          },
+        ];
+
+        const documentRows: ReportRow[] = activeFamilies.flatMap((f) =>
+          (f.documents ?? []).map((document) => ({
+            familyId: safe(f.id),
+            fileNumber: safe(f.fileNumber),
+            headName: safe(f.headName),
+            documentId: safe(document.id),
+            headNationalId: safe(document.headNationalId),
+            documentType: safe(document.type),
+            documentName: safe(document.name),
+            documentUrl: safe(document.url),
+            uploadedAt: parseDate(document.uploadedAt),
+            uploadedBy: safe(document.uploadedBy),
+            documentStatus: translate(document.status),
+          })),
+        );
+
+        createProfessionalSheet(
+          "وثائق العائلات",
+          documentColumns,
+          documentRows,
+          {
+            tableName: "FamilyDocumentsReportTable",
+            stats: [
+              { label: "عدد العائلات", value: activeFamilies.length },
+              { label: "عدد الوثائق", value: documentRows.length },
+            ],
+            note: "كل صف يمثل وثيقة مرتبطة بعائلة. الروابط تُصدّر كما هي مسجلة في النظام، وقد تتطلب صلاحية للوصول إليها.",
+          },
+        );
       }
 
       // ============================================================
@@ -1388,12 +1606,12 @@ export default function ReportsPage() {
           activeFamilies.forEach((f) => {
             const headRow = individualSheet.getRow(rowNumber);
 
-            headRow.height = 34;
+            headRow.height = 38;
 
             headRow.eachCell((cell) => {
               cell.font = {
-                name: "Segoe UI",
-                size: 10.5,
+                name: "Arial",
+                size: 12,
                 bold: true,
                 color: { argb: argb(COLORS.primaryDark) },
               };
@@ -1430,7 +1648,7 @@ export default function ReportsPage() {
             for (let i = 1; i <= membersCount; i++) {
               const memberRow = individualSheet.getRow(rowNumber + i);
 
-              memberRow.height = 28;
+              memberRow.height = 34;
               memberRow.outlineLevel = 1;
             }
 
